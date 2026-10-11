@@ -187,6 +187,8 @@ const state = {
   totals: [],
   benchmarks: [],
   benchSelected: new Set(),
+  update: null,
+  updateAt: 0,
   offerMineOnly: true,
 };
 
@@ -258,6 +260,56 @@ async function setPaused(paused) {
     render();
     setTimeout(refreshStatus, 1500);
   } catch (e) { toast(e.message, true); }
+}
+
+// ---------------------------------------------------------------- update
+
+// updateBox says that a newer release exists, and offers to install it.
+function updateBox() {
+  const u = state.update;
+  if (!u || (!u.available && !u.downloaded)) return null;
+  const notes = u.page ? h('a', { href: u.page, target: '_blank', rel: 'noopener' }, 'What is new') : null;
+  if (u.downloaded) {
+    return h('div', { class: 'eta' },
+      h('div', { class: 'main' }, 'rbm ' + u.downloaded + ' is fetched and checked.'),
+      h('div', { class: 'help' }, u.restartable ? 'rbm restarts to let it take over.' : 'It takes over the next time rbm is started with start.bat or start.sh.'));
+  }
+  return h('div', { class: 'eta' },
+    h('div', { class: 'title' }, h('div', { class: 'main' }, 'rbm ' + u.latest + ' is available. This is ' + u.current + '.'),
+      h('button', { class: 'primary', disabled: u.busy, onclick: installUpdate }, u.busy ? 'Fetching ...' : 'Update now'), notes),
+    h('div', { class: 'help' }, 'The release is fetched from GitHub and checked against the checksum GitHub lists for it. ' +
+      (u.restartable ? 'Then rbm stops its miners and restarts with the new version.' : 'It then waits for the next start: this rbm was not started with start.bat or start.sh, so it cannot restart itself.')),
+    u.error ? h('div', { class: 'help error' }, u.error) : null);
+}
+
+async function loadUpdate(force) {
+  if (!force && Date.now() - state.updateAt < 60000) return;
+  state.updateAt = Date.now();
+  try { state.update = await api('/api/update'); } catch (e) { /* the next try comes by itself */ }
+}
+
+async function installUpdate() {
+  const u = state.update;
+  if (!confirm('Update rbm to ' + u.latest + ' now?' + (u.restartable ? ' The miners stop and rbm restarts.' : ''))) return;
+  state.update = Object.assign({}, u, { busy: true });
+  render();
+  try {
+    state.update = await api('/api/update/install', { method: 'POST' });
+    toast(state.update.restartable ? 'Fetched - rbm restarts' : 'Fetched - it takes over at the next start');
+  } catch (e) {
+    toast('Not updated: ' + e.message, true);
+    await loadUpdate(true);
+  }
+  render();
+}
+
+async function checkUpdate() {
+  try {
+    state.update = await api('/api/update/check', { method: 'POST' });
+    state.updateAt = Date.now();
+    toast(state.update.available ? 'rbm ' + state.update.latest + ' is available' : 'This is the newest version');
+  } catch (e) { toast(e.message, true); }
+  render();
 }
 
 // ------------------------------------------------------------- dashboard
@@ -340,6 +392,7 @@ function renderDashboard() {
 
   return h('div', {},
     h('h1', {}, 'Dashboard'),
+    updateBox(),
     benchmarkEta(state.benchmarks, Math.round(s.benchmark_seconds), true),
     h('div', { class: 'title' }, h('h2', {}, 'Running Miners on ' + workerName()), pauseButton()),
     miners.el,
@@ -816,6 +869,12 @@ function setupGeneral() {
     h('div', { class: 'section' }, h('h3', {}, 'Memory'),
       numberField('Min. Free RAM, in GB', 'general.memory.min_free_ram_gb', 'Main memory (RAM and page file together) that is left for everything else. A miner whose algorithm needs more than the rest is not started. This is what keeps two miners from building a large DAG at the same time and running the machine out of memory.', '0.5'),
       numberField('Reserved GPU VRAM, in GB', 'general.memory.reserved_vram_gb', 'Graphics memory that is left alone on every card, for example for the desktop.', '0.1')),
+    h('div', { class: 'section' }, h('h3', {}, 'Updates'),
+      field('This version', state.update && state.update.latest
+        ? (state.update.available ? 'rbm ' + state.update.latest + ' is available.' : 'This is the newest version.') : 'GitHub has not been asked yet.',
+        [h('code', {}, state.meta.version), ' ', h('button', { class: 'small', onclick: checkUpdate }, 'Check now')]),
+      boolField('Look for updates', 'general.updates.check', 'Ask GitHub a few times a day whether there is a newer release, and say so on the dashboard. Nothing is installed by this.'),
+      boolField('Install updates by themselves', 'general.updates.auto', 'Fetch and start a newer release without asking, as soon as it is found. Off by default: rbm then runs whatever is published as a release of this project, without anyone looking at it first. It only works where rbm was started with start.bat or start.sh.')),
     h('div', { class: 'section' }, h('h3', {}, 'Machine\'s localhost API setup'),
       textField('Listen address', 'general.api.listen', 'host:port. 127.0.0.1 is only reachable from this machine. A change takes effect after rbm is restarted. Empty turns the interface off.'),
       textField('Password', 'general.api.password', 'Without a password the interface only works on this machine. With one, every access needs it (the user name does not matter). Use it only on a network you trust: the connection is not encrypted.', 'password')),
@@ -1072,6 +1131,7 @@ async function refreshStatus() {
   banner.hidden = notices.length === 0;
   banner.replaceChildren(...notices.map(text => h('div', {}, text)));
   renderTopbar();
+  await loadUpdate(false);
 
   for (const what of NEEDS[state.page] || []) {
     try { state[SOURCES[what]] = await api('/api/' + what); } catch (e) { /* stale figures stay; the next tick tries again */ }

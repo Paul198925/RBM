@@ -44,6 +44,16 @@ type General struct {
 	CPU       CPU       `yaml:"cpu" json:"cpu"`
 	Memory    Memory    `yaml:"memory" json:"memory"`
 	API       API       `yaml:"api" json:"api"`
+	Updates   Updates   `yaml:"updates" json:"updates"`
+}
+
+// Updates controls what is done about newer releases of the program.
+type Updates struct {
+	// Check asks GitHub now and then whether there is a newer release.
+	Check bool `yaml:"check" json:"check"`
+	// Auto installs a newer release without asking. It takes effect where
+	// the program was started by its start script, which starts it again.
+	Auto bool `yaml:"auto" json:"auto"`
 }
 
 // Memory keeps miners from taking the machine's last memory. A miner whose
@@ -266,8 +276,9 @@ func Default() *Config {
 				BenchmarkTime:     Duration(3 * time.Minute),
 				UseEstimates:      true,
 			},
-			Memory: Memory{MinFreeRAMGB: 2, ReservedVRAMGB: 0.5},
-			API:    API{Listen: "127.0.0.1:4000"},
+			Memory:  Memory{MinFreeRAMGB: 2, ReservedVRAMGB: 0.5},
+			API:     API{Listen: "127.0.0.1:4000"},
+			Updates: Updates{Check: true},
 		},
 		Pools: Pools{
 			Wallets: Wallets{},

@@ -265,3 +265,6 @@ td.mono { font-family: var(--mono); font-size: 12px; }
 .eta .main { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
 .reason { margin-top: 4px; max-width: 420px; font-size: 12px; color: var(--muted); white-space: normal; }
 .banner div + div { margin-top: 6px; }
+.eta .title { margin: 0 0 4px; }
+.eta .title .main { margin: 0; }
+.help.error { color: var(--bad); }

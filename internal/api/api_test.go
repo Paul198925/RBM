@@ -22,14 +22,17 @@ import (
 
 // fakeBackend records what the API asks of the application.
 type fakeBackend struct {
-	cfg            config.Config
-	saved          *config.Config
-	saveErr        error
-	waiting        string
-	paused         bool
-	watchdogResets int
-	reset          []string
-	enabled        []string
+	cfg             config.Config
+	saved           *config.Config
+	saveErr         error
+	waiting         string
+	paused          bool
+	watchdogResets  int
+	updateChecks    int
+	updateInstalled string
+	updateErr       error
+	reset           []string
+	enabled         []string
 }
 
 func newBackend() *fakeBackend {
@@ -115,6 +118,24 @@ func (f *fakeBackend) ResetBenchmarks(which string, hashKeys []string) {
 
 func (f *fakeBackend) Enable(hashKey string) { f.enabled = append(f.enabled, hashKey) }
 func (f *fakeBackend) ResetWatchdog()        { f.watchdogResets++ }
+
+func (f *fakeBackend) UpdateInfo() UpdateInfo {
+	return UpdateInfo{Current: "0.3.0", Latest: "0.4.0", Page: "https://github.com/Paul198925/RBM/releases/tag/v0.4.0",
+		Available: true, Restartable: true, Downloaded: f.updateInstalled}
+}
+
+func (f *fakeBackend) CheckUpdate(ctx context.Context) error {
+	f.updateChecks++
+	return f.updateErr
+}
+
+func (f *fakeBackend) InstallUpdate(ctx context.Context) error {
+	if f.updateErr != nil {
+		return f.updateErr
+	}
+	f.updateInstalled = "0.4.0"
+	return nil
+}
 
 func (f *fakeBackend) Totals() ([]stats.Total, error) {
 	return []stats.Total{{Pool: "zpool", Runs: 42, EarnedBTC: 0.00012819, EnergyKWh: 4.616, Minutes: 3052.77,
@@ -455,6 +476,35 @@ func TestWatchdogTotalsAndOfferDetails(t *testing.T) {
 	}
 	if strings.Contains(body, "wallet1") {
 		t.Errorf("offers leak the wallet: %s", body)
+	}
+}
+
+func TestUpdateRoutes(t *testing.T) {
+	b := newBackend()
+	body := do(b, request{path: "/api/update"}).Body.String()
+	for _, want := range []string{`"current":"0.3.0"`, `"latest":"0.4.0"`, `"available":true`, `"downloaded":""`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("update info misses %s: %s", want, body)
+		}
+	}
+	if w := do(b, request{method: http.MethodPost, path: "/api/update/check"}); w.Code != http.StatusOK || b.updateChecks != 1 {
+		t.Errorf("check: %d, %d checks", w.Code, b.updateChecks)
+	}
+	w := do(b, request{method: http.MethodPost, path: "/api/update/install"})
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"downloaded":"0.4.0"`) {
+		t.Errorf("install: %d %s", w.Code, w.Body)
+	}
+	// what went wrong is said
+	b.updateErr = errors.New("update: the checksum does not match")
+	if w := do(b, request{method: http.MethodPost, path: "/api/update/install"}); w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "checksum") {
+		t.Errorf("failed install: %d %s", w.Code, w.Body)
+	}
+	if w := do(b, request{method: http.MethodPost, path: "/api/update/check"}); w.Code != http.StatusBadGateway {
+		t.Errorf("failed check: %d", w.Code)
+	}
+	// installing is a change: it takes the header that a foreign page cannot send
+	if w := do(b, request{method: http.MethodPost, path: "/api/update/install", noHeader: true}); w.Code == http.StatusOK {
+		t.Errorf("install without the header: %d", w.Code)
 	}
 }
 

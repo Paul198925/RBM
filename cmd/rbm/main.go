@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -46,6 +47,10 @@ const legacyConfig = "config.yaml"
 
 func main() {
 	if err := run(); err != nil {
+		// the start script starts the program again, with the new build
+		if errors.Is(err, runner.ErrRestart) {
+			os.Exit(runner.RestartCode)
+		}
 		fmt.Fprintln(os.Stderr, "rbm:", err)
 		os.Exit(1)
 	}

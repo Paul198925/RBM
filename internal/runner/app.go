@@ -26,10 +26,12 @@ import (
 	"rbm/internal/rates"
 	"rbm/internal/stats"
 	"rbm/internal/sysinfo"
+	"rbm/internal/update"
 )
 
-// Version is shown in the interface.
-const Version = "0.2"
+// Version is this build's number. It is shown in the interface, and what a
+// newer release is measured against. It is raised with every release.
+const Version = "0.3.0"
 
 const (
 	logLines          = 1000
@@ -53,6 +55,10 @@ type App struct {
 	definitions map[string]*miner.Definition
 	// what is missing on this machine, as found at the start
 	notices []string
+	// checker asks for newer releases, nil where that is not wanted;
+	// restart is signalled when one is to take over
+	checker *update.Checker
+	restart chan struct{}
 	reload  chan struct{}
 	started time.Time
 	// replaceable for tests
@@ -77,6 +83,7 @@ type App struct {
 	balances     api.BalanceInfo
 	balanceKey   string
 	balanceAt    time.Time
+	update       updateState
 }
 
 // NewApp loads the configuration from dir and looks at the hardware.
@@ -97,6 +104,8 @@ func NewApp(ctx context.Context, configDir string, out io.Writer) (*App, error) 
 	}
 	return &App{
 		notices:     notices,
+		checker:     &update.Checker{},
+		restart:     make(chan struct{}, 1),
 		configDir:   configDir,
 		out:         out,
 		devices:     devices,
@@ -140,9 +149,28 @@ func (a *App) Run(ctx context.Context) error {
 	watchCtx, stopWatching := context.WithCancel(ctx)
 	defer stopWatching()
 	go a.watch(watchCtx)
+	go a.watchUpdates(watchCtx)
+
+	// a restart for an update ends everything the way Ctrl+C does
+	ctx, stop := context.WithCancel(ctx)
+	defer stop()
+	restarting := make(chan struct{})
+	go func() {
+		select {
+		case <-a.restart:
+			close(restarting)
+			stop()
+		case <-ctx.Done():
+		}
+	}()
 
 	for {
 		err := a.cycle(ctx)
+		select {
+		case <-restarting:
+			return ErrRestart
+		default:
+		}
 		if ctx.Err() != nil {
 			return nil
 		}

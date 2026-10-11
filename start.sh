@@ -3,11 +3,6 @@
 # Watch and configure it in the web interface: http://127.0.0.1:4000/
 cd "$(dirname "$0")" || exit 1
 
-# a newer build waits next to the running program until the next start
-if [ -f rbm.new ]; then
-    mv -f rbm.new rbm
-fi
-
 # go_install_hint prints how Go is installed on this system. It is not done
 # from here: that needs root, and which Go to take is the user's choice.
 go_install_hint() {
@@ -29,7 +24,7 @@ go_install_hint() {
 
 # build the program from the source code next to this file, if that and Go
 # are there
-if [ ! -f rbm ]; then
+if [ ! -f rbm ] && [ ! -f rbm.new ]; then
     if [ ! -f cmd/rbm/main.go ]; then
         echo "rbm not found, and neither is its source code." >&2
         echo "Get the program from https://github.com/Paul198925/RBM/releases" >&2
@@ -52,8 +47,20 @@ if [ ! -f rbm ]; then
     fi
     echo "Built rbm."
 fi
-chmod +x rbm
 
-# rbm takes this script's place, so that Ctrl+C and the stop signal of a
-# service reach it directly and it can stop its miners
-exec ./rbm run "$@"
+# tells rbm that it is started again when it ends to finish an update
+export RBM_RESTART=1
+
+while :; do
+    # a newer build waits next to the running program until the next start
+    if [ -f rbm.new ]; then
+        mv -f rbm.new rbm
+    fi
+    chmod +x rbm
+    ./rbm run "$@"
+    code=$?
+    # 75 is rbm asking to be started again, with the update it has fetched
+    if [ "$code" -ne 75 ]; then
+        exit "$code"
+    fi
+done

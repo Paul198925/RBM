@@ -46,6 +46,11 @@ type Backend interface {
 	// Activity returns the miner runs of the last days, newest first.
 	Activity() ([]stats.Run, error)
 	Config() config.Config
+	// UpdateInfo says whether there is a newer release; CheckUpdate asks
+	// now, InstallUpdate fetches it.
+	UpdateInfo() UpdateInfo
+	CheckUpdate(ctx context.Context) error
+	InstallUpdate(ctx context.Context) error
 	// SaveConfig validates, stores and applies a new configuration.
 	SaveConfig(cfg config.Config) error
 	Meta(ctx context.Context) Meta
@@ -83,6 +88,25 @@ type DeviceStatus struct {
 	Telemetry *device.Telemetry `json:"telemetry,omitempty"`
 	// MaxTemperatureC is the highest temperature seen since the start.
 	MaxTemperatureC float64 `json:"max_temperature_c,omitempty"`
+}
+
+// UpdateInfo says whether a newer release of the program exists.
+type UpdateInfo struct {
+	Current string `json:"current"`
+	// Latest and Page are empty until a release was found.
+	Latest string `json:"latest"`
+	Page   string `json:"page"`
+	// Available says Latest is newer than Current.
+	Available bool `json:"available"`
+	// Downloaded is the version that waits for the next start, if any.
+	Downloaded string `json:"downloaded"`
+	// Restartable says the program is started again when it ends, so an
+	// update can finish by itself.
+	Restartable bool `json:"restartable"`
+	Busy        bool `json:"busy"`
+	// Checked is when GitHub was last asked.
+	Checked *time.Time `json:"checked,omitempty"`
+	Error   string     `json:"error,omitempty"`
 }
 
 // BalanceInfo is what the pools hold for the configured wallets.
@@ -240,6 +264,24 @@ func Handler(b Backend) http.Handler {
 		w.WriteHeader(http.StatusNoContent)
 	})
 	mux.HandleFunc("POST /api/candidates/enable", action(b.Enable))
+	mux.HandleFunc("GET /api/update", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, b.UpdateInfo())
+	})
+	mux.HandleFunc("POST /api/update/check", func(w http.ResponseWriter, r *http.Request) {
+		if err := b.CheckUpdate(r.Context()); err != nil {
+			writeError(w, http.StatusBadGateway, err.Error())
+			return
+		}
+		writeJSON(w, b.UpdateInfo())
+	})
+	mux.HandleFunc("POST /api/update/install", func(w http.ResponseWriter, r *http.Request) {
+		// the request may end before the download does; the download goes on
+		if err := b.InstallUpdate(context.WithoutCancel(r.Context())); err != nil {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
+		writeJSON(w, b.UpdateInfo())
+	})
 	mux.HandleFunc("POST /api/watchdog/reset", func(w http.ResponseWriter, r *http.Request) {
 		b.ResetWatchdog()
 		w.WriteHeader(http.StatusNoContent)

@@ -3,6 +3,10 @@ rem Starts mining with all devices on what pays best. Stop with Ctrl+C.
 rem Watch and configure it in the web interface: http://127.0.0.1:4000/
 cd /d "%~dp0"
 
+rem tells rbm that it is started again when it ends to finish an update
+set RBM_RESTART=1
+
+:run
 rem a newer build waits next to the running program until the next start
 if exist rbm.new.exe move /y rbm.new.exe rbm.exe >nul
 
@@ -14,6 +18,8 @@ if not exist rbm.exe (
 
 rem by its full path: Windows can be set not to look in the current folder
 "%~dp0rbm.exe" run
+rem 75 is rbm asking to be started again, with the update it has fetched
+if errorlevel 75 if not errorlevel 76 goto run
 echo.
 echo rbm has stopped.
 pause
