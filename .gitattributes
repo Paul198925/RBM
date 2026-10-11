@@ -1,2 +1,9 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Go tooling and the embedded miner definitions expect LF on every platform
+*.go text eol=lf
+*.mod text eol=lf
+*.sum text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
