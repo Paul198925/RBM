@@ -1,0 +1,58 @@
+# T-Rex, a closed-source NVIDIA GPU miner. https://github.com/trexminer/T-Rex
+#
+# Version 0.26.8 of October 2022 is the last one; the program is no longer
+# developed, and cards newer than the RTX 40 series are unknown to it. The
+# project publishes no checksums; the ones below were taken from the
+# archives on the official release page on 2026-10-11. The command lines
+# follow the example scripts that come with the program.
+name: trex
+version: 0.26.8
+api: trex
+vendor: NVIDIA
+fee: 1.0
+
+downloads:
+  windows:
+    url: https://github.com/trexminer/T-Rex/releases/download/0.26.8/t-rex-0.26.8-win.zip
+    sha256: 207bfa95050e2ac1f16ceecd5891b93eda7bada2730b4e7172283d72f5ad2309
+    executable: t-rex.exe
+  linux:
+    url: https://github.com/trexminer/T-Rex/releases/download/0.26.8/t-rex-0.26.8-linux.tar.gz
+    sha256: 7e77064a48b4c8cb8d4797f30a41b53efbb8311fc14475b56a8e6879ad1c0569
+    executable: t-rex
+
+args:
+  - -a
+  - "{algo}"
+  - -o
+  - "{scheme}://{host}:{port}"
+  - -u
+  - "{user}"
+  - -p
+  - "{pass}"
+  - -d
+  - "{devices}"
+  # the API can also change settings; here it may only be read
+  - --api-bind-http
+  - "127.0.0.1:{api_port}"
+  - --api-read-only
+  - --no-watchdog
+  - --no-color
+  - --no-new-block-info
+
+scheme: stratum+tcp
+scheme_tls: stratum+ssl
+
+algorithms:
+  # the memory figures follow the size of the coins' data in October 2026
+  - name: autolykos2
+    fee: 2.0
+    min_memory_mib: 7400
+  - name: etchash
+    min_memory_mib: 5120
+  - name: ethash
+    min_memory_mib: 7680
+  - name: firopow
+    min_memory_mib: 6144
+  - name: kawpow
+    min_memory_mib: 6144
