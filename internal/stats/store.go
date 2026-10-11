@@ -94,6 +94,12 @@ func (s *Store) Save(key string, st Stat) error {
 	return err
 }
 
+// Delete removes the stat stored under key, if there is one.
+func (s *Store) Delete(key string) error {
+	_, err := s.db.Exec("DELETE FROM stats WHERE key = ?", key)
+	return err
+}
+
 // AddSample records one raw measurement for charts and troubleshooting.
 func (s *Store) AddSample(key string, t time.Time, value, power float64) error {
 	_, err := s.db.Exec("INSERT INTO samples (key, ts, value, power) VALUES (?, ?, ?, ?)",

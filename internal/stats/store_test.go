@@ -31,6 +31,18 @@ func TestStoreRoundTrip(t *testing.T) {
 	if err := store.Save(key, st); err != nil {
 		t.Fatal(err)
 	}
+	if err := store.Save("other", st); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Delete("other"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, _ := store.Load("other"); ok {
+		t.Error("deleted stat is still there")
+	}
+	if err := store.Delete("never existed"); err != nil {
+		t.Error(err)
+	}
 	if err := store.Close(); err != nil {
 		t.Fatal(err)
 	}
