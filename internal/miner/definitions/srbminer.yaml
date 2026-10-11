@@ -59,3 +59,15 @@ algorithms:
   - name: yescrypt
   - name: yescryptr16
   - name: yespower
+  # the algorithms below are mined at coin pools. Names and fees are the
+  # ones RainbowMiner uses for SRBMiner, the memory figures follow the size
+  # of the coins' data in October 2026.
+  - name: autolykos2
+    fee: 1.0
+    min_memory_mib: 7400
+  - name: etchash
+    fee: 0.65
+    min_memory_mib: 5120
+  - name: ethash
+    fee: 0.65
+    min_memory_mib: 7680

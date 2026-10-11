@@ -77,3 +77,7 @@ algorithms:
   - name: skein2
   - name: skydoge
     fee: 2.0
+  # mined at coin pools; name and fee as RainbowMiner has them for WildRig
+  - name: nexapow
+    fee: 0.75
+    min_memory_mib: 3072

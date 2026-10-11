@@ -57,3 +57,14 @@ algorithms:
     min_memory_mib: 6144
   - name: sha512256d
     miner_name: radiant
+  # the algorithms below are mined at coin pools. Names and fees are the
+  # ones RainbowMiner uses for GMiner, the memory figures follow the size of
+  # the coins' data in October 2026.
+  - name: autolykos2
+    min_memory_mib: 7400
+  - name: etchash
+    fee: 1.0
+    min_memory_mib: 5120
+  - name: ethash
+    fee: 1.0
+    min_memory_mib: 7680
