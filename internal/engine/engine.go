@@ -811,7 +811,9 @@ func (e *Engine) Offers() []pool.Offer {
 // refreshRate updates the bitcoin price. Without one, electricity cannot be
 // priced and is left out until the next try.
 func (e *Engine) refreshRate(ctx context.Context, now time.Time) {
-	if e.opts.PowerPricePerKWh <= 0 {
+	// the price is wanted in any case, to show earnings in real money; only
+	// the cost of electricity depends on it
+	if e.deps.Rate == nil {
 		return
 	}
 	if !e.rateTried.IsZero() && now.Sub(e.rateTried) < rateInterval {
@@ -826,7 +828,7 @@ func (e *Engine) refreshRate(ctx context.Context, now time.Time) {
 		if e.rate > 0 {
 			e.deps.Logf("exchange rate: %v, keeping %.2f %s per BTC", err, e.rate, e.opts.PowerCurrency)
 		} else {
-			e.deps.Logf("exchange rate: %v, electricity is not counted for now", err)
+			e.deps.Logf("exchange rate: %v, no %s figures for now", err, e.opts.PowerCurrency)
 		}
 		return
 	}

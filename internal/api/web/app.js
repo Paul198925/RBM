@@ -189,8 +189,8 @@ function renderDashboard() {
   const cards = h('div', { class: 'cards' },
     card('Device groups mining', mining + ' of ' + s.groups.length),
     card('Expected profit per day', fmtBTC(profit) === '-' ? '-' : fmtBTC(profit) + ' BTC', fiat(profit)),
-    card('Power draw', fmtWatts(power), s.btc_price ? '' : 'electricity is not counted'),
-    card('Bitcoin price', s.btc_price ? s.btc_price.toFixed(0) + ' ' + s.currency : '-', s.btc_price ? '' : 'only fetched with a power price'),
+    card('Power draw', fmtWatts(power), state.config && state.config.general.power.price_per_kwh > 0 ? '' : 'electricity is not counted'),
+    card('Bitcoin price', s.btc_price ? s.btc_price.toFixed(0) + ' ' + s.currency : '-', s.btc_price ? '' : 'not known yet'),
     memory ? card('Memory left to reserve', fmtGB(memory.commit_free_mib), 'of ' + fmtGB(memory.commit_limit_mib) + ' (RAM and page file); RAM free: ' + fmtGB(memory.free_mib)) : null);
 
   const groups = s.groups.length
@@ -518,7 +518,7 @@ function configGeneral() {
       textField('Data directory', 'general.data_dir', 'Miner programs, logs and the statistics database are kept here.')),
     h('div', { class: 'section' }, h('h3', {}, 'Electricity'),
       numberField('Price per kWh', 'general.power.price_per_kwh', 'With 0, electricity is not counted. Otherwise the cost of the measured power draw is taken off the earnings.', '0.01'),
-      textField('Currency', 'general.power.currency', 'Three letter code of the price above, e.g. EUR or USD. The bitcoin price is fetched in it.')),
+      textField('Currency', 'general.power.currency', 'Three letter code, e.g. EUR or USD. Earnings are shown in it, and the price above is in it.')),
     h('div', { class: 'section' }, h('h3', {}, 'Switching'),
       textField('Round length', 'general.switching.interval', 'How often hashrates are stored and the choice of miner is reconsidered. 30s to 1h, e.g. 1m.'),
       numberField('Hysteresis in percent', 'general.switching.hysteresis_percent', 'Another candidate must earn this much more before the running miner is stopped for it.'),

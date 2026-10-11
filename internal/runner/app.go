@@ -315,11 +315,11 @@ func (a *App) build(ctx context.Context, cfg *config.Config, store *stats.Store)
 		Logf:        a.logf,
 	}
 	power := cfg.General.Power
+	coinbase := &rates.Coinbase{}
+	deps.Rate = func(ctx context.Context) (float64, error) {
+		return coinbase.BTCPrice(ctx, power.Currency)
+	}
 	if power.PricePerKWh > 0 {
-		coinbase := &rates.Coinbase{}
-		deps.Rate = func(ctx context.Context) (float64, error) {
-			return coinbase.BTCPrice(ctx, power.Currency)
-		}
 		a.logf("electricity: %g %s per kWh", power.PricePerKWh, power.Currency)
 	} else {
 		a.logf("electricity is not counted (power.price_per_kwh is 0)")

@@ -204,3 +204,19 @@ func TestReservedVRAM(t *testing.T) {
 	s.advance(10 * time.Minute)
 	s.wantLaunches("kawpow")
 }
+
+// The bitcoin price is fetched whether electricity is counted or not: it is
+// what turns earnings into real money on the screen.
+func TestExchangeRateWithoutAPowerPrice(t *testing.T) {
+	s := twoPrices(t, Options{})
+	s.advance(10 * time.Minute)
+	status := s.engine.Status()
+	if status.BTCPrice != 50000 || status.Currency != "EUR" {
+		t.Errorf("rate = %v %q", status.BTCPrice, status.Currency)
+	}
+	// but without a power price it costs nothing: profit is all revenue
+	c := status.Groups[0].Candidates[0]
+	if c.ProfitBTC != c.RevenueBTC || c.ProfitBTC <= 0 {
+		t.Errorf("candidate = %+v", c)
+	}
+}
