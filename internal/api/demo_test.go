@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"rbm/internal/config"
 	"rbm/internal/engine"
 	"rbm/internal/pool"
 )
@@ -70,6 +71,7 @@ func (d demoBackend) Offers() []pool.Offer {
 		{Pool: "zpool", Algorithm: "kawpow", Coin: "CLORE", CoinName: "Clore", Host: host("kawpow"), Port: 1325, Price: 1.1e-13, Hashrate: 3.1e9, Workers: 60, FeePercent: 1, LastBlockSeconds: 396, Blocks24h: 211, Updated: updated},
 		{Pool: "zpool", Algorithm: "kawpow", Coin: "MEWC", CoinName: "Meowcoin <b>bold?</b>", Host: host("kawpow"), Port: 1325, Price: 9e-14, Hashrate: 2e8, Workers: 11, FeePercent: 1, LastBlockSeconds: 4210, Blocks24h: 17, Updated: updated},
 		{Pool: "zpool", Algorithm: "ghostrider", Host: host("ghostrider"), Port: 5354, Price: 6.3e-10, Price24h: 6.0e-10, Actual24h: 6.4e-10, Hashrate: 97190, Workers: 7223, FeePercent: 1, Updated: updated},
+		{Pool: "2miners", Algorithm: "kawpow", Coin: "RVN", CoinName: "Ravencoin", Host: "rvn.2miners.com", Port: 6060, Price: 1.05e-13, Hashrate: 3.08e11, Workers: 3626, FeePercent: 1, LastBlockSeconds: 76, Blocks24h: 705, Updated: updated},
 		{Pool: "zpool", Algorithm: "sha256", Host: host("sha256"), Port: 3333, Price: 2e-19, Hashrate: 4e17, Workers: 300, FeePercent: 1, Updated: updated},
 	}
 }
@@ -83,7 +85,10 @@ func TestDemoServer(t *testing.T) {
 	if addr == "" {
 		t.Skip("set RBM_UI_DEMO to an address to serve the interface with made-up data")
 	}
-	srv, err := Start(addr, Handler(demoBackend{newBackend()}))
+	backend := newBackend()
+	backend.cfg.Pools.Wallets = config.Wallets{"RVN": "RDemoAddress1", "ERG": "9demoAddress"}
+	backend.cfg.Pools.TwoMiners.Enabled = true
+	srv, err := Start(addr, Handler(demoBackend{backend}))
 	if err != nil {
 		t.Fatal(err)
 	}

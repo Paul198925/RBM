@@ -215,7 +215,12 @@ function totals() {
 }
 
 function workerName() { return state.config ? state.config.general.worker : ''; }
-function payoutCoin() { return state.config ? state.config.pools.zpool.currency : ''; }
+// The coin a pool pays in: zpool converts everything into one, the coin
+// pools pay what is mined.
+function payoutCoin(pool, coin) {
+  if (pool === 'zpool') return state.config ? state.config.pools.zpool.currency : '';
+  return coin || '';
+}
 
 // --------------------------------------------------------------- top bar
 
@@ -310,7 +315,7 @@ function renderDashboard() {
     { key: 'miner', label: 'Name' },
     { key: 'pool', label: 'Pool' },
     { key: 'coin', label: 'Coin', cell: g => g.coin || 'pool picks' },
-    { key: 'paid', label: 'Paid', value: () => payoutCoin() },
+    { key: 'paid', label: 'Paid', value: g => payoutCoin(g.pool, g.coin) },
     { key: 'name', label: 'Devices', cell: g => h('span', { title: g.devices.join(', ') }, g.name) },
     { key: 'profit', label: 'Profit', num: true, value: g => g.profit_btc_per_day,
       cell: g => (g.state === 'benchmarking' ? 'benchmarking' : fmtBTC(g.profit_btc_per_day) + (fiat(g.profit_btc_per_day) ? '  (' + fiat(g.profit_btc_per_day) + ')' : '')) },
@@ -368,7 +373,8 @@ function minedAlgorithms() {
 }
 
 function poolColumns(withAction) {
-  const excluded = new Set(state.config ? state.config.pools.zpool.exclude_coins : []);
+  const pools = state.config ? state.config.pools : null;
+  const excluded = o => Boolean(pools) && poolSettings(pools, o.pool).exclude_coins.includes(o.coin);
   const ratio = o => (o.actual_24h > 0 && o.price_24h > 0 ? o.actual_24h / o.price_24h : 0);
   return [
     { key: 'algorithm', label: 'Algorithm' },
@@ -385,9 +391,12 @@ function poolColumns(withAction) {
     { key: 'host', label: 'Host', cell: o => (o.host ? o.host + ':' + o.port : ''), cls: () => 'mono' },
     { key: 'updated', label: 'Last Updated', filter: false, value: o => new Date(o.updated).getTime(), cell: o => (fmtAgo(o.updated) ? fmtAgo(o.updated) + ' ago' : '') },
     withAction ? { key: 'action', label: '', filter: false, value: () => '',
-      cell: o => (o.coin && !excluded.has(o.coin) ? h('button', { class: 'small', title: 'Never mine this coin on its own', onclick: () => excludeCoin(o.coin) }, 'Exclude') : '') } : null,
+      cell: o => (o.coin && !excluded(o) ? h('button', { class: 'small', title: 'Do not mine this coin at this pool', onclick: () => excludeCoin(o.pool, o.coin) }, 'Exclude') : '') } : null,
   ].filter(Boolean);
 }
+
+// The settings of a pool, by the name its offers carry.
+function poolSettings(pools, name) { return name === '2miners' ? pools.twominers : pools.zpool; }
 
 function poolToolbar(count) {
   return h('div', { class: 'toolbar' },
@@ -415,15 +424,15 @@ function renderAllPools() {
   const t = dataTable('allpools', poolColumns(true), offersToShow(),
     { empty: 'No offers yet. They appear once the engine has asked the pool.' });
   return h('div', {}, h('h1', {}, 'All Pools'),
-    h('p', { class: 'lead' }, 'Everything zpool.ca pays for right now. "Pool picks" is the pool\'s own port for an algorithm, where it switches between coins itself; the other rows mine exactly one coin. Coins nobody is mining at the pool are not offered.'),
+    h('p', { class: 'lead' }, 'Everything the enabled pools pay for right now. "Pool picks" is zpool\'s own port for an algorithm, where it switches between coins itself; the other rows mine exactly one coin. Coins nobody is mining at a pool are not offered. zpool reports its prices itself; for 2Miners they are worked out from the coin\'s price, its block reward and the hashrate of its network.'),
     poolToolbar(t.rows.length), t.el);
 }
 
-async function excludeCoin(coin) {
-  if (!confirm('Never mine ' + coin + ' as a single coin? You can undo this under Setup Pools.')) return;
+async function excludeCoin(pool, coin) {
+  if (!confirm('Stop mining ' + coin + ' at ' + pool + '? You can undo this under Setup Pools.')) return;
   try {
     const cfg = JSON.parse(JSON.stringify(state.config));
-    cfg.pools.zpool.exclude_coins.push(coin);
+    poolSettings(cfg.pools, pool).exclude_coins.push(coin);
     await api('/api/config', { method: 'PUT', body: cfg });
     toast(coin + ' excluded');
     await loadConfig();
@@ -436,13 +445,13 @@ function renderEarnings() {
   const amount = key => ({ key, label: { balance: 'Balance', unsold: 'Pending', unpaid: 'Total', paid_24h: 'Paid 24h', total: 'Earned' }[key], num: true,
     cell: b => fmtCoin(b[key], b.currency) });
   return h('div', {}, h('h1', {}, 'Pool Earnings'),
-    h('p', { class: 'lead' }, 'What the pools hold for your wallets, as they report it. "Balance" is confirmed and waits for the next payout, "Pending" is mined but not yet exchanged into the payout coin.'),
+    h('p', { class: 'lead' }, 'What the pools hold for your wallets, as they report it. "Balance" is confirmed and waits for the next payout. "Pending" is mined but not final yet: at zpool not exchanged into the payout coin, at 2Miners in blocks that still have to mature.'),
     info.error ? h('p', { class: 'help' }, 'Could not be updated: ' + info.error) : null,
     dataTable('earnings', [
       { key: 'pool', label: 'Name' }, { key: 'currency', label: 'Currency' },
       amount('balance'), amount('unsold'), amount('unpaid'), amount('paid_24h'), amount('total'),
       { key: 'updated', label: 'Last Updated', filter: false, value: b => new Date(b.updated).getTime(), cell: b => fmtDate(b.updated) },
-    ], info.balances, { empty: 'Nothing yet. The pool is asked every ten minutes once a wallet is set.' }).el);
+    ], info.balances, { empty: 'Nothing yet. The pools are asked every ten minutes once a wallet is set.' }).el);
 }
 
 function renderPayouts() {
@@ -736,7 +745,7 @@ function renderSetup() {
   const changed = JSON.stringify(state.draft) !== JSON.stringify(state.config);
   const savebar = h('div', { class: 'savebar' },
     h('button', { class: 'primary', onclick: saveConfig }, 'Save and apply'),
-    h('button', { onclick: () => { state.draft = JSON.parse(JSON.stringify(state.config)); render(); } }, 'Discard changes'),
+    h('button', { onclick: () => { state.draft = JSON.parse(JSON.stringify(state.config)); state.walletRows = null; render(); } }, 'Discard changes'),
     h('span', { class: 'error', id: 'config-error' }),
     h('span', { class: 'note' }, 'Saving writes all setup pages to ' + state.meta.config_dir + ' and restarts the miners with the new settings.'
       + (changed ? ' There are unsaved changes.' : '')));
@@ -772,6 +781,59 @@ function setupGeneral() {
   ];
 }
 
+// walletRows are the lines of the wallet list while it is edited. The
+// configuration holds the wallets by coin, which a half-typed line cannot be.
+function walletRows() {
+  if (!state.walletRows) {
+    state.walletRows = Object.entries(state.draft.pools.wallets).map(([coin, address]) => ({ coin, address }));
+  }
+  return state.walletRows;
+}
+
+function storeWallets() {
+  const wallets = {};
+  for (const row of state.walletRows) {
+    const coin = row.coin.trim().toUpperCase();
+    if (coin || row.address.trim()) wallets[coin] = row.address.trim();
+  }
+  state.draft.pools.wallets = wallets;
+}
+
+function setupWallets() {
+  const known = new Map();
+  for (const c of state.meta.twominers_coins) known.set(c.symbol, c.name);
+  for (const c of state.meta.payout_currencies) if (!known.has(c.symbol)) known.set(c.symbol, c.name);
+  const rows = walletRows();
+  const line = row => h('tr', {},
+    h('td', {}, h('input', { type: 'text', list: 'wallet-coins', placeholder: 'RVN', size: '8', value: row.coin,
+      oninput: e => { row.coin = e.target.value; storeWallets(); } })),
+    h('td', {}, h('input', { type: 'text', class: 'wide', placeholder: 'address', value: row.address, spellcheck: 'false',
+      oninput: e => { row.address = e.target.value; storeWallets(); } })),
+    h('td', {}, h('button', { class: 'small', onclick: () => { rows.splice(rows.indexOf(row), 1); storeWallets(); render(); } }, 'Remove')));
+  return h('div', { class: 'section' }, h('h3', {}, 'Wallets'),
+    h('p', { class: 'help' }, 'One payout address per coin. 2Miners pays every coin to its own wallet and mines the coins that have one here. zpool uses the wallet of its payout coin unless it has an address of its own below. rbm cannot check an address; a wrong one is only noticed by the pool, or not at all.'),
+    rows.length ? h('table', { class: 'wallets' },
+      h('thead', {}, h('tr', {}, h('th', {}, 'Coin'), h('th', {}, 'Address'), h('th', {}))),
+      h('tbody', {}, rows.map(line))) : null,
+    h('datalist', { id: 'wallet-coins' }, Array.from(known).map(([symbol, name]) => h('option', { value: symbol }, name))),
+    h('div', { class: 'go' }, h('button', { onclick: () => { rows.push({ coin: '', address: '' }); render(); } }, 'Add a wallet')));
+}
+
+function setupTwoMiners() {
+  const wallets = state.draft.pools.wallets;
+  const coins = state.meta.twominers_coins;
+  const mined = new Set(minedAlgorithms());
+  const note = c => c.symbol + '  ' + c.name + '  (' + c.algorithm + (wallets[c.symbol] ? '' : ', no wallet') + (mined.has(c.algorithm) ? '' : ', no miner program') + ')';
+  const bySymbol = {};
+  for (const c of coins) bySymbol[c.symbol] = c;
+  return h('div', { class: 'section' }, h('h3', {}, '2Miners'),
+    boolField('Use this pool', 'pools.twominers.enabled', 'A pool with one server per coin. It pays in the coin that is mined, to that coin\'s wallet from the list above, and keeps 1 %.'),
+    selectField('Region', 'pools.twominers.region', 'The stratum servers to connect to.', state.meta.twominers_regions.map(r => ({ value: r, text: r }))),
+    boolField('SSL', 'pools.twominers.tls', 'Encrypt the connection to the pool.'),
+    field('Coins', 'Unchecked coins are not mined there. A coin also needs a wallet and a miner program for its algorithm.',
+      toggleList(coins.map(c => c.symbol), 'pools.twominers.exclude_coins', symbol => note(bySymbol[symbol]))));
+}
+
 function setupPools() {
   const currencies = state.meta.payout_currencies.map(c => ({
     value: c.symbol, text: c.symbol + ' - ' + c.name + (c.notice ? '  (!)' : '') }));
@@ -780,15 +842,17 @@ function setupPools() {
     (chosen && chosen.minimum_payout ? ' Minimum payout: ' + chosen.minimum_payout + ' ' + chosen.symbol + '.' : '') +
     (chosen && chosen.notice ? ' Notice from zpool: ' + chosen.notice : '');
   return [
+    setupWallets(),
+    setupTwoMiners(),
     h('div', { class: 'section' }, h('h3', {}, 'Zpool'),
-      boolField('Use this pool', 'pools.zpool.enabled', ''),
+      boolField('Use this pool', 'pools.zpool.enabled', 'A pool that pays everything out in one coin, whatever is mined.'),
       currencies.length
         ? selectField('Payout coin', 'pools.zpool.currency', currencyHelp, currencies)
         : textField('Payout coin', 'pools.zpool.currency', 'zpool could not be asked for its list; enter the symbol, e.g. BTC, LTC or RVN.'),
-      textField('Wallet', 'pools.zpool.wallet', 'Must be an address of the payout coin. rbm cannot check that; a wrong address is only noticed by the pool.'),
+      textField('Wallet', 'pools.zpool.wallet', 'An address of the payout coin. Leave it empty to use the wallet of the payout coin from the list above.'),
       selectField('Region', 'pools.zpool.region', 'The stratum servers to connect to.', state.meta.zpool_regions.map(r => ({ value: r, text: r }))),
       boolField('SSL', 'pools.zpool.tls', 'Encrypt the connection to the pool where it has a port for it.')),
-    h('div', { class: 'section' }, h('h3', {}, 'What to mine there'),
+    h('div', { class: 'section' }, h('h3', {}, 'What to mine at Zpool'),
       boolField('Zpool (algorithm ports)', 'pools.zpool.algo_switching', 'Mine on the pool\'s port for an algorithm and let the pool pick the coin. It may switch every few minutes; for algorithms with a DAG (KawPoW and relatives) every switch rebuilds it, which costs time and needs a lot of memory.'),
       boolField('ZpoolCoins (single coins)', 'pools.zpool.coin_mining', 'Mine exactly one coin at a time, chosen by what it pays. No DAG switching, but a single coin often pays less than the algorithm port.'),
       listField('CoinSymbol', 'pools.zpool.coins', 'Mine only these coins as single coins. Symbols separated by commas; empty allows every coin the pool offers.'),
@@ -937,6 +1001,7 @@ async function loadConfig() {
   state.config = res.config;
   state.meta = res.meta;
   state.draft = JSON.parse(JSON.stringify(res.config));
+  state.walletRows = null;
   document.getElementById('version').textContent = 'v' + res.meta.version;
   document.getElementById('worker').textContent = 'Worker: ' + res.config.general.worker;
 }

@@ -101,8 +101,9 @@ func (f *fakeBackend) SaveConfig(cfg config.Config) error {
 
 func (f *fakeBackend) Meta(ctx context.Context) Meta {
 	return Meta{Version: "test", ConfigDir: "config", Regions: config.ZpoolRegions,
-		Miners:     []MinerInfo{{Name: "rigel", Version: "1.23.2", Vendor: "NVIDIA", Algorithms: []string{"kawpow"}}},
-		Currencies: []pool.PayoutCurrency{{Symbol: "BTC", Name: "Bitcoin"}}}
+		Miners:           []MinerInfo{{Name: "rigel", Version: "1.23.2", Vendor: "NVIDIA", Algorithms: []string{"kawpow"}}},
+		Currencies:       []pool.PayoutCurrency{{Symbol: "BTC", Name: "Bitcoin"}},
+		TwoMinersRegions: config.TwoMinersRegions, TwoMinersCoins: pool.TwoMinersCoins()}
 }
 
 func (f *fakeBackend) ResetBenchmarks(which string, hashKeys []string) {
