@@ -41,6 +41,24 @@ CREATE TABLE IF NOT EXISTS samples (
 	power REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS samples_key_ts ON samples (key, ts);
+CREATE TABLE IF NOT EXISTS runs (
+	id        INTEGER PRIMARY KEY AUTOINCREMENT,
+	grp       TEXT NOT NULL,
+	miner     TEXT NOT NULL,
+	algorithm TEXT NOT NULL,
+	pool      TEXT NOT NULL,
+	coin      TEXT NOT NULL,
+	started   INTEGER NOT NULL,
+	ended     INTEGER NOT NULL,
+	benchmark INTEGER NOT NULL,
+	end       TEXT NOT NULL,
+	hashrate  REAL NOT NULL,
+	earned    REAL NOT NULL,
+	energy    REAL NOT NULL,
+	accepted  INTEGER NOT NULL,
+	rejected  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS runs_ended ON runs (ended);
 `
 
 // Open opens the database at path and creates it if needed.

@@ -1,0 +1,74 @@
+package stats
+
+import "time"
+
+// How a run of a miner ended.
+const (
+	EndSwitched   = "switched"    // something else became more profitable
+	EndCrashed    = "crashed"     // the miner program exited on its own
+	EndNoHashrate = "no hashrate" // the miner hung and was stopped
+	EndPaused     = "paused"      // the user paused mining
+	EndStopped    = "stopped"     // the program stopped or the configuration changed
+)
+
+// Run is one run of a miner program, from start to stop: the activity log.
+type Run struct {
+	ID        int64     `json:"id"`
+	Group     string    `json:"group"`
+	Miner     string    `json:"miner"`
+	Algorithm string    `json:"algorithm"`
+	Pool      string    `json:"pool"`
+	Coin      string    `json:"coin"`
+	Started   time.Time `json:"started"`
+	Ended     time.Time `json:"ended"`
+	Benchmark bool      `json:"benchmark"`
+	End       string    `json:"end"`
+	// Hashrate is the average over the measured time, pauses included.
+	Hashrate float64 `json:"hashrate"`
+	// EarnedBTC is an estimate from hashrate and pool price, not what the
+	// pool has credited.
+	EarnedBTC float64 `json:"earned_btc"`
+	EnergyKWh float64 `json:"energy_kwh"`
+	Accepted  int64   `json:"accepted"`
+	Rejected  int64   `json:"rejected"`
+}
+
+// AddRun appends a run to the activity log.
+func (s *Store) AddRun(r Run) error {
+	_, err := s.db.Exec(
+		"INSERT INTO runs (grp, miner, algorithm, pool, coin, started, ended, benchmark, end, hashrate, earned, energy, accepted, rejected) "+
+			"VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		r.Group, r.Miner, r.Algorithm, r.Pool, r.Coin, r.Started.Unix(), r.Ended.Unix(), r.Benchmark, r.End,
+		r.Hashrate, r.EarnedBTC, r.EnergyKWh, r.Accepted, r.Rejected)
+	return err
+}
+
+// Runs returns the runs that ended at or after since, newest first, at most
+// limit of them.
+func (s *Store) Runs(since time.Time, limit int) ([]Run, error) {
+	rows, err := s.db.Query(
+		"SELECT id, grp, miner, algorithm, pool, coin, started, ended, benchmark, end, hashrate, earned, energy, accepted, rejected "+
+			"FROM runs WHERE ended >= ? ORDER BY ended DESC, id DESC LIMIT ?", since.Unix(), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	runs := []Run{}
+	for rows.Next() {
+		var r Run
+		var started, ended int64
+		if err := rows.Scan(&r.ID, &r.Group, &r.Miner, &r.Algorithm, &r.Pool, &r.Coin, &started, &ended, &r.Benchmark, &r.End,
+			&r.Hashrate, &r.EarnedBTC, &r.EnergyKWh, &r.Accepted, &r.Rejected); err != nil {
+			return nil, err
+		}
+		r.Started, r.Ended = time.Unix(started, 0), time.Unix(ended, 0)
+		runs = append(runs, r)
+	}
+	return runs, rows.Err()
+}
+
+// PruneRuns deletes the runs that ended before the given time.
+func (s *Store) PruneRuns(before time.Time) error {
+	_, err := s.db.Exec("DELETE FROM runs WHERE ended < ?", before.Unix())
+	return err
+}

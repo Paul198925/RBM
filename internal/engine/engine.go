@@ -19,6 +19,7 @@ import (
 	"rbm/internal/pool"
 	"rbm/internal/selector"
 	"rbm/internal/stats"
+	"rbm/internal/sysinfo"
 )
 
 const (
@@ -73,6 +74,14 @@ type Options struct {
 	// ExcludeAlgorithms are never mined.
 	OnlyAlgorithms    []string
 	ExcludeAlgorithms []string
+
+	// Paused starts the engine without mining.
+	Paused bool
+	// MinFreeRAMMiB of the memory programs may reserve is left alone, and
+	// ReservedVRAMMiB of every GPU's memory: a miner that needs more than
+	// the rest is not started.
+	MinFreeRAMMiB   float64
+	ReservedVRAMMiB float64
 }
 
 // MinerOptions are the user's settings for one miner program.
@@ -96,7 +105,10 @@ type Deps struct {
 	// Power returns the measured power draw of GPUs by vendor index, for
 	// miners that do not report their own. May be nil.
 	Power func(ctx context.Context) (map[int]float64, error)
-	Logf  func(format string, args ...any)
+	// Memory returns how much memory the machine has left. May be nil,
+	// then memory is not checked.
+	Memory func() (sysinfo.Memory, error)
+	Logf   func(format string, args ...any)
 }
 
 // Engine mines with every device group on what pays best.
@@ -112,6 +124,9 @@ type Engine struct {
 	rate      float64 // power currency per BTC, 0 if unknown
 	rateTried time.Time
 	params    selector.Params
+	paused    bool
+	// memory that miners started a moment ago will take but have not yet
+	reserved []reservation
 
 	// what other goroutines may touch
 	mu       sync.Mutex
@@ -120,6 +135,15 @@ type Engine struct {
 	commands []func()
 	wake     chan struct{}
 }
+
+// reservation is memory a just started miner is about to take.
+type reservation struct {
+	mib   float64
+	until time.Time
+}
+
+// reservationTime is how long a started miner may need to take its memory.
+const reservationTime = 3 * time.Minute
 
 // group is a set of identical devices that mine together with one miner.
 type group struct {
@@ -136,6 +160,8 @@ type group struct {
 	// what the last round saw and decided, for the status
 	options  []option
 	decision selector.Decision
+	// candidates left out in the last round for lack of memory
+	memoryBlocked int
 }
 
 // option is a candidate together with what is needed to start it. Its ID
@@ -169,6 +195,12 @@ type run struct {
 	lastStore   time.Time
 	lastHash    time.Time
 	apiErrors   int
+
+	// what the run has delivered so far, for the activity log
+	measuredTime time.Duration
+	hashSeconds  float64 // sum of hashrate times seconds
+	earnedBTC    float64
+	energyWh     float64
 }
 
 // New prepares an engine for the devices in deps.
@@ -186,6 +218,7 @@ func New(opts Options, deps Deps) (*Engine, error) {
 		offers:   map[string][]pool.Offer{},
 		offersAt: map[string]time.Time{},
 		wake:     make(chan struct{}, 1),
+		paused:   opts.Paused,
 	}
 	if len(e.groups) == 0 {
 		return nil, errors.New("no device found to mine with")
@@ -351,6 +384,22 @@ func (e *Engine) Enable(hashKey string) {
 	})
 }
 
+// SetPaused stops all mining, or takes it up again. It is safe to call from
+// any goroutine.
+func (e *Engine) SetPaused(paused bool) {
+	e.do(func() {
+		if e.paused == paused {
+			return
+		}
+		e.paused = paused
+		if paused {
+			e.deps.Logf("mining is paused")
+		} else {
+			e.deps.Logf("mining continues")
+		}
+	})
+}
+
 // round stores what was measured, checks on the running miners and makes
 // every group mine what the selector picks.
 func (e *Engine) round(ctx context.Context, now time.Time) error {
@@ -362,6 +411,19 @@ func (e *Engine) round(ctx context.Context, now time.Time) error {
 		return err
 	}
 	e.refreshRate(ctx, now)
+
+	if e.paused {
+		for _, g := range e.groups {
+			if g.run != nil {
+				e.deps.Logf("%s: stopping %s", g.name, g.run.label())
+				e.stop(g, stats.EndPaused, now)
+			}
+			g.options, g.memoryBlocked = nil, 0
+			g.decision = selector.Decision{Reason: "paused"}
+		}
+		e.publish(now)
+		return nil
+	}
 
 	params := selector.Params{
 		HysteresisPercent: e.opts.HysteresisPercent,
@@ -406,10 +468,13 @@ func (e *Engine) round(ctx context.Context, now time.Time) error {
 		if len(candidates) == 0 && len(g.disabled) > 0 {
 			decision.Reason = fmt.Sprintf("%d candidates are taken out after failures", len(g.disabled))
 		}
+		if decision.ID == "" && g.memoryBlocked > 0 {
+			decision.Reason = fmt.Sprintf("not enough free memory for %d candidates that need a lot of it", g.memoryBlocked)
+		}
 		if decision.ID != running {
 			if g.run != nil {
 				e.deps.Logf("%s: stopping %s", g.name, g.run.label())
-				e.stop(g)
+				e.stop(g, stats.EndSwitched, now)
 			}
 			if decision.ID != "" {
 				e.start(ctx, g, byID[decision.ID], decision, now)
@@ -444,7 +509,7 @@ func (e *Engine) checkRun(g *group, now time.Time) {
 	select {
 	case <-r.miner.Done():
 		e.deps.Logf("%s: %s exited on its own (%s)", g.name, r.label(), r.miner.ExitText())
-		e.stop(g)
+		e.stop(g, stats.EndCrashed, now)
 		e.failed(g, r.hashKey, now, false)
 		return
 	default:
@@ -458,7 +523,7 @@ func (e *Engine) checkRun(g *group, now time.Time) {
 		return
 	}
 	e.deps.Logf("%s: %s reported no hashrate for %v", g.name, r.label(), now.Sub(silentSince).Round(time.Second))
-	e.stop(g)
+	e.stop(g, stats.EndNoHashrate, now)
 	e.failed(g, r.hashKey, now, r.benchmark)
 }
 
@@ -522,6 +587,9 @@ func (e *Engine) options(g *group, now time.Time) ([]option, error) {
 		}
 	}
 
+	freeMiB, checkMemory := e.freeMemory(g, now)
+	g.memoryBlocked = 0
+
 	var options []option
 	for _, name := range miner.Names(e.deps.Definitions) {
 		def := e.deps.Definitions[name]
@@ -529,7 +597,7 @@ func (e *Engine) options(g *group, now time.Time) ([]option, error) {
 			continue
 		}
 		for _, a := range def.Algorithms {
-			if !fits(g, a) || !e.allowed(def, a.Name) {
+			if !e.fits(g, a) || !e.allowed(def, a.Name) {
 				continue
 			}
 			offers := e.offersFor(a.Name, now)
@@ -538,6 +606,12 @@ func (e *Engine) options(g *group, now time.Time) ([]option, error) {
 			}
 			hashKey := stats.HashrateKey(def.Name, g.deviceIDs(), a.Name)
 			if _, out := g.disabled[hashKey]; out {
+				continue
+			}
+			// a miner that is running has its memory already
+			running := g.run != nil && g.run.hashKey == hashKey
+			if checkMemory && !running && memoryNeed(g, a) > freeMiB {
+				g.memoryBlocked++
 				continue
 			}
 			base := option{
@@ -603,14 +677,53 @@ func (e *Engine) options(g *group, now time.Time) ([]option, error) {
 	return kept, nil
 }
 
-// fits reports whether every device of g has the memory algorithm a needs.
-func fits(g *group, a miner.Algorithm) bool {
+// fits reports whether every device of g has the memory algorithm a needs,
+// with the reserve the user wants to keep.
+func (e *Engine) fits(g *group, a miner.Algorithm) bool {
+	if a.MinMemoryMiB <= 0 {
+		return true
+	}
 	for _, d := range g.devices {
-		if d.MemoryMiB < a.MinMemoryMiB {
+		if float64(d.MemoryMiB)-e.opts.ReservedVRAMMiB < float64(a.MinMemoryMiB) {
 			return false
 		}
 	}
 	return true
+}
+
+// memoryNeed estimates the main memory a miner reserves for algorithm a on
+// group g: the operating system backs what a miner puts on a GPU, a DAG
+// above all, with the same amount of main memory.
+func memoryNeed(g *group, a miner.Algorithm) float64 {
+	return float64(a.MinMemoryMiB * len(g.devices))
+}
+
+// freeMemory returns how much memory a new miner of g could reserve. ok is
+// false if that is not known and memory is not to be checked.
+func (e *Engine) freeMemory(g *group, now time.Time) (mib float64, ok bool) {
+	if e.deps.Memory == nil {
+		return 0, false
+	}
+	memory, err := e.deps.Memory()
+	if err != nil {
+		return 0, false
+	}
+	free := memory.CommitFreeMiB - e.opts.MinFreeRAMMiB
+
+	// miners started a moment ago have not taken their share yet
+	kept := e.reserved[:0]
+	for _, r := range e.reserved {
+		if now.Before(r.until) {
+			kept = append(kept, r)
+			free -= r.mib
+		}
+	}
+	e.reserved = kept
+	// and what the group's own miner holds comes back when it is replaced
+	if r := g.run; r != nil && now.Sub(r.started) >= reservationTime {
+		free += memoryNeed(g, r.algo)
+	}
+	return free, true
 }
 
 // offersFor returns the fresh offers for an algorithm.
@@ -746,6 +859,9 @@ func (e *Engine) start(ctx context.Context, g *group, o option, decision selecto
 		return
 	}
 	e.deps.Logf("%s: %s is running (%s)", g.name, o.def.Name, m.Describe())
+	if need := memoryNeed(g, o.algo); need > 0 {
+		e.reserved = append(e.reserved, reservation{mib: need, until: now.Add(reservationTime)})
+	}
 	g.run = &run{
 		option:      o,
 		miner:       m,
@@ -764,26 +880,57 @@ func (e *Engine) threads(g *group) int {
 	return 0
 }
 
-// stop ends the miner of g. The stop gets its own context: it must also
-// work while the program is shutting down.
-func (e *Engine) stop(g *group) {
-	if g.run == nil {
+// stop ends the miner of g and writes the run into the activity log. The
+// stop gets its own context: it must also work while the program is
+// shutting down.
+func (e *Engine) stop(g *group, end string, now time.Time) {
+	r := g.run
+	if r == nil {
 		return
 	}
-	if err := g.run.miner.Stop(context.Background()); err != nil {
+	if err := r.miner.Stop(context.Background()); err != nil {
 		e.deps.Logf("%s: stop: %v", g.name, err)
 	}
 	g.run = nil
+
+	record := stats.Run{
+		Group:     g.name,
+		Miner:     r.def.Name,
+		Algorithm: r.algo.Name,
+		Pool:      r.offer.Pool,
+		Coin:      r.offer.Coin,
+		Started:   r.started,
+		Ended:     now,
+		Benchmark: r.benchmark,
+		End:       end,
+		EarnedBTC: r.earnedBTC,
+		EnergyKWh: r.energyWh / 1000,
+	}
+	if seconds := r.measuredTime.Seconds(); seconds > 0 {
+		record.Hashrate = r.hashSeconds / seconds
+	}
+	if last, ok := r.window.Last(); ok {
+		shares := last.For(r.algo.NameForMiner())
+		record.Accepted, record.Rejected = shares.Accepted, shares.Rejected+shares.Invalid
+	}
+	if err := e.deps.Store.AddRun(record); err != nil {
+		e.deps.Logf("activity log: %v", err)
+	}
 }
 
 func (e *Engine) stopAll() {
+	now := time.Now()
+	// what the last minutes delivered still counts
+	if err := e.store(now); err != nil {
+		e.deps.Logf("storing the last measurements: %v", err)
+	}
 	for _, g := range e.groups {
 		if g.run != nil {
 			e.deps.Logf("%s: stopping %s", g.name, g.run.label())
-			e.stop(g)
+			e.stop(g, stats.EndStopped, now)
 		}
 	}
-	e.publish(time.Now())
+	e.publish(now)
 }
 
 // poll reads the statistics of all running miners. It reports whether one
@@ -853,10 +1000,18 @@ func (e *Engine) store(now time.Time) error {
 		hashrate, power, n := r.window.Average(r.algo.NameForMiner(), since)
 		r.lastStore = now
 		r.window.Prune(now.Add(-2 * e.opts.Interval))
+		span := now.Sub(since)
+		if n > 0 {
+			// the activity log counts every measured second, also the ones
+			// in which the miner stood still
+			r.measuredTime += span
+			r.hashSeconds += hashrate * span.Seconds()
+			r.earnedBTC += hashrate * r.Price * (1 - r.FeePercent/100) * span.Hours() / 24
+			r.energyWh += power * span.Hours()
+		}
 		if n == 0 || hashrate <= 0 {
 			continue
 		}
-		span := now.Sub(since)
 
 		st, _, err := e.deps.Store.Load(r.hashKey)
 		if err != nil {

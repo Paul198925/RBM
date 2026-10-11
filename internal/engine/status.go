@@ -15,9 +15,11 @@ type Status struct {
 	BTCPrice float64 `json:"btc_price,omitempty"`
 	// BenchmarkSeconds is the measured mining time a hashrate needs
 	// before it is trusted.
-	BenchmarkSeconds float64       `json:"benchmark_seconds"`
-	Currency         string        `json:"currency,omitempty"`
-	Groups           []GroupStatus `json:"groups"`
+	BenchmarkSeconds float64 `json:"benchmark_seconds"`
+	// Paused is set while mining is paused by the user.
+	Paused   bool          `json:"paused"`
+	Currency string        `json:"currency,omitempty"`
+	Groups   []GroupStatus `json:"groups"`
 }
 
 // GroupStatus describes one device group.
@@ -88,7 +90,7 @@ func (e *Engine) Status() Status {
 
 // publish builds a fresh snapshot. Only the engine's own goroutine calls it.
 func (e *Engine) publish(now time.Time) {
-	status := Status{Time: now, BTCPrice: e.rate, BenchmarkSeconds: e.opts.BenchmarkTime.Seconds(),
+	status := Status{Time: now, BTCPrice: e.rate, BenchmarkSeconds: e.opts.BenchmarkTime.Seconds(), Paused: e.paused,
 		Groups: make([]GroupStatus, 0, len(e.groups))}
 	if e.rate > 0 {
 		status.Currency = e.opts.PowerCurrency
