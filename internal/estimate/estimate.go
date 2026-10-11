@@ -32,6 +32,9 @@ type Entry struct {
 	Hashrate float64 `yaml:"hashrate"`
 	// PowerWatts is the draw of one device while mining, 0 if unknown.
 	PowerWatts float64 `yaml:"power_watts,omitempty"`
+	// Reports is how many rigs the figure is the middle of, where it comes
+	// from the share server; 0 for one that comes with the program.
+	Reports int `yaml:"reports,omitempty"`
 }
 
 // Table finds estimates. A nil table has none.
@@ -138,4 +141,27 @@ func (t *Table) With(entries []Entry) *Table {
 		merged.entries[key(e.Device, e.Miner, e.Algorithm)] = e
 	}
 	return merged
+}
+
+// Entries returns everything the table holds, sorted by device, miner and
+// algorithm.
+func (t *Table) Entries() []Entry {
+	if t == nil {
+		return nil
+	}
+	entries := make([]Entry, 0, len(t.entries))
+	for _, e := range t.entries {
+		entries = append(entries, e)
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		a, b := entries[i], entries[j]
+		if a.Device != b.Device {
+			return a.Device < b.Device
+		}
+		if a.Miner != b.Miner {
+			return a.Miner < b.Miner
+		}
+		return a.Algorithm < b.Algorithm
+	})
+	return entries
 }

@@ -51,6 +51,10 @@ type Backend interface {
 	UpdateInfo() UpdateInfo
 	CheckUpdate(ctx context.Context) error
 	InstallUpdate(ctx context.Context) error
+	// Shared lists the hashrates measured on other machines; RefreshShared
+	// exchanges them with the share server now.
+	Shared() (SharedInfo, error)
+	RefreshShared(ctx context.Context) error
 	// SaveConfig validates, stores and applies a new configuration.
 	SaveConfig(cfg config.Config) error
 	Meta(ctx context.Context) Meta
@@ -107,6 +111,39 @@ type UpdateInfo struct {
 	// Checked is when GitHub was last asked.
 	Checked *time.Time `json:"checked,omitempty"`
 	Error   string     `json:"error,omitempty"`
+}
+
+// SharedInfo is the list of hashrates measured on other machines, and how
+// this rig takes part in the exchange.
+type SharedInfo struct {
+	// URL is the share server, empty if none is set.
+	URL      string `json:"url"`
+	Download bool   `json:"download"`
+	Upload   bool   `json:"upload"`
+	// Used says the engine starts from these figures.
+	Used bool `json:"used"`
+	// Fetched is when the server's list was last fetched.
+	Fetched *time.Time       `json:"fetched,omitempty"`
+	Entries []SharedHashrate `json:"entries"`
+}
+
+// SharedHashrate is what one device of a model does with a miner program on
+// an algorithm, as measured elsewhere.
+type SharedHashrate struct {
+	Device     string  `json:"device"`
+	Miner      string  `json:"miner"`
+	Version    string  `json:"version"`
+	Algorithm  string  `json:"algorithm"`
+	Hashrate   float64 `json:"hashrate"`
+	PowerWatts float64 `json:"power_watts"`
+	// Reports is how many rigs the figure rests on, 0 for one that comes
+	// with the program.
+	Reports int `json:"reports"`
+	// Mine says this rig has a device of that model.
+	Mine bool `json:"mine"`
+	// OwnHashrate is what this rig measured for the same, per device, 0 if
+	// it has not.
+	OwnHashrate float64 `json:"own_hashrate"`
 }
 
 // BalanceInfo is what the pools hold for the configured wallets.
@@ -264,6 +301,24 @@ func Handler(b Backend) http.Handler {
 		w.WriteHeader(http.StatusNoContent)
 	})
 	mux.HandleFunc("POST /api/candidates/enable", action(b.Enable))
+	mux.HandleFunc("GET /api/shared", func(w http.ResponseWriter, r *http.Request) {
+		info, err := b.Shared()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if info.Entries == nil {
+			info.Entries = []SharedHashrate{}
+		}
+		writeJSON(w, info)
+	})
+	mux.HandleFunc("POST /api/shared/refresh", func(w http.ResponseWriter, r *http.Request) {
+		if err := b.RefreshShared(r.Context()); err != nil {
+			writeError(w, http.StatusBadGateway, err.Error())
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
 	mux.HandleFunc("GET /api/update", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, b.UpdateInfo())
 	})

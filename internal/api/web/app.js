@@ -188,6 +188,8 @@ const state = {
   benchmarks: [],
   benchSelected: new Set(),
   update: null,
+  shared: { entries: [] },
+  sharedMineOnly: true,
   updateAt: 0,
   offerMineOnly: true,
 };
@@ -195,7 +197,7 @@ const state = {
 const PAGES = {
   '': 'dashboard', console: 'console', devices: 'devices',
   bestpools: 'bestpools', allpools: 'allpools', earnings: 'earnings', totals: 'totals', payouts: 'payouts',
-  miners: 'miners', benchmarks: 'benchmarks', activity: 'activity', watchdog: 'watchdog',
+  miners: 'miners', benchmarks: 'benchmarks', activity: 'activity', shared: 'shared', watchdog: 'watchdog',
   setup: 'setup', setupwallets: 'setupwallets', setuppools: 'setuppools', setupminers: 'setupminers', setupalgorithms: 'setupalgorithms', setupdevices: 'setupdevices',
   // names of earlier versions
   pools: 'allpools', config: 'setup', logs: 'console',
@@ -726,6 +728,56 @@ function renderActivity() {
     t.el);
 }
 
+// ---------------------------------------------------------------- shared
+
+function renderShared() {
+  const info = state.shared;
+  const hasMine = info.entries.some(e => e.mine);
+  const rows = info.entries.filter(e => !state.sharedMineOnly || !hasMine || e.mine);
+  // how far this rig's own measurement is from the shared figure
+  const diff = e => (e.own_hashrate > 0 ? 100 * (e.own_hashrate - e.hashrate) / e.hashrate : null);
+  const t = dataTable('shared', [
+    { key: 'device', label: 'Device', cell: e => [e.device, e.mine ? h('small', { class: 'help' }, '  yours') : null] },
+    { key: 'miner', label: 'Name', cell: e => [e.miner, h('small', { class: 'help' }, '  ' + (e.version || ''))] },
+    { key: 'algorithm', label: 'Algorithm' },
+    { key: 'hashrate', label: 'Speed', num: true, cell: e => fmtHash(e.hashrate) },
+    { key: 'power_watts', label: 'Power', num: true, cell: e => fmtWatts(e.power_watts) },
+    { key: 'reports', label: 'Rigs', num: true,
+      cell: e => (e.reports > 0 ? e.reports : h('span', { class: 'help', title: 'This figure comes with rbm, not from the share server.' }, 'built in')) },
+    { key: 'own_hashrate', label: 'Measured here', num: true, cell: e => (e.own_hashrate > 0 ? fmtHash(e.own_hashrate) : '') },
+    { key: 'diff', label: 'Difference', num: true, value: e => (diff(e) === null ? -1000 : diff(e)),
+      cell: e => (diff(e) === null ? '' : (diff(e) > 0 ? '+' : '') + diff(e).toFixed(1) + ' %'),
+      cls: e => (diff(e) === null ? '' : diff(e) >= 0 ? 'pos' : diff(e) < -10 ? 'neg' : '') },
+  ], rows, { empty: 'No shared hashrates are known.', sort: { key: 'device', dir: 1 } });
+
+  const where = info.url
+    ? [info.fetched ? 'Last fetched from ' + info.url + ' ' + fmtAgo(info.fetched) + ' ago.' : 'Nothing was fetched from ' + info.url + ' yet; the figures below come with rbm.',
+      info.download ? '' : ' Fetching is turned off.',
+      info.upload ? ' This rig shares what it measures.' : ' This rig does not share what it measures.']
+    : ['No share server is set; the figures below come with rbm.'];
+  return h('div', {},
+    h('div', { class: 'title' }, h('h1', {}, 'Shared Hashrates'),
+      h('button', { class: 'primary', disabled: !info.url, onclick: refreshShared }, info.upload ? 'Fetch and share now' : 'Fetch now')),
+    h('p', { class: 'lead' }, 'What other rigs measured, per card, miner program and algorithm: the middle of what was reported. ' +
+      (info.used ? 'rbm starts from these figures for your cards until it has measured them itself.' : 'They are not used: "Start from estimates" is turned off under Setup.') +
+      ' The same card is faster or slower with another driver, clock or power limit; "Measured here" shows what yours does.'),
+    h('p', { class: 'help' }, where.join(''), ' ', h('a', { href: '#/setup' }, 'Change this under Setup.')),
+    h('div', { class: 'toolbar' },
+      hasMine ? h('label', {}, h('input', { type: 'checkbox', checked: state.sharedMineOnly,
+        onchange: e => { state.sharedMineOnly = e.target.checked; render(); } }), ' only the cards of this rig') : null,
+      h('span', { class: 'help' }, t.rows.length + ' of ' + info.entries.length + ' shown')),
+    t.el);
+}
+
+async function refreshShared() {
+  try {
+    await api('/api/shared/refresh', { method: 'POST' });
+    state.shared = await api('/api/shared');
+    toast('Up to date');
+  } catch (e) { toast(e.message, true); }
+  render();
+}
+
 // -------------------------------------------------------------- watchdog
 
 function renderWatchdog() {
@@ -1106,7 +1158,7 @@ async function loadMinerLog(name) {
 const VIEWS = {
   dashboard: renderDashboard, console: renderConsole, devices: renderDevices,
   bestpools: renderBestPools, allpools: renderAllPools, earnings: renderEarnings, totals: renderTotals, payouts: renderPayouts,
-  miners: renderMiners, benchmarks: renderBenchmarks, activity: renderActivity, watchdog: renderWatchdog,
+  miners: renderMiners, benchmarks: renderBenchmarks, activity: renderActivity, shared: renderShared, watchdog: renderWatchdog,
   setup: renderSetup, setupwallets: renderSetup, setuppools: renderSetup, setupminers: renderSetup, setupalgorithms: renderSetup, setupdevices: renderSetup,
 };
 
@@ -1114,9 +1166,9 @@ const VIEWS = {
 const NEEDS = {
   dashboard: ['devices', 'balances', 'benchmarks'], devices: ['devices'],
   bestpools: ['offers'], allpools: ['offers'], earnings: ['balances'], payouts: ['balances'], totals: ['totals'],
-  benchmarks: ['benchmarks'], activity: ['activity'], console: ['log', 'minerlogs'],
+  benchmarks: ['benchmarks'], activity: ['activity'], shared: ['shared'], console: ['log', 'minerlogs'],
 };
-const SOURCES = { devices: 'devices', balances: 'balances', offers: 'offers', totals: 'totals', benchmarks: 'benchmarks', activity: 'activity', log: 'log', minerlogs: 'minerLogs' };
+const SOURCES = { devices: 'devices', balances: 'balances', offers: 'offers', totals: 'totals', benchmarks: 'benchmarks', activity: 'activity', shared: 'shared', log: 'log', minerlogs: 'minerLogs' };
 
 async function refreshStatus() {
   const conn = document.getElementById('conn');

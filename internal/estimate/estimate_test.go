@@ -130,3 +130,15 @@ func TestWith(t *testing.T) {
 		t.Error("a nil table cannot be added to")
 	}
 }
+
+func TestEntries(t *testing.T) {
+	base, _ := Parse([]byte(sample))
+	entries := base.With([]Entry{{Device: "GeForce RTX 2080 SUPER", Miner: "rigel", Algorithm: "kawpow", Hashrate: 20.9e6, Reports: 4}}).Entries()
+	if len(entries) != 3 || entries[0].Device != "GeForce RTX 2080 SUPER" || entries[0].Reports != 4 || entries[1].Miner != "rigel" || entries[2].Miner != "wildrig" {
+		t.Errorf("entries = %+v", entries)
+	}
+	var none *Table
+	if none.Entries() != nil {
+		t.Error("a nil table has entries")
+	}
+}

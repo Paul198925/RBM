@@ -36,7 +36,14 @@ type submission struct {
 // listing is what the server hands out: per device, miner and algorithm
 // the middle of what the rigs reported.
 type listing struct {
-	Estimates []Report `json:"estimates"`
+	Estimates []shared `json:"estimates"`
+}
+
+// shared is one figure of the server's list, with the number of rigs it is
+// the middle of.
+type shared struct {
+	Report
+	Reports int `json:"reports"`
 }
 
 var (

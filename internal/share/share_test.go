@@ -64,7 +64,7 @@ func TestEstimatesAreFetchedAndChecked(t *testing.T) {
 		t.Fatalf("entries = %+v, %v", entries, err)
 	}
 	e := entries[0]
-	if e.Device != "GeForce RTX 3060" || e.Miner != "rigel" || e.Algorithm != "kawpow" || e.Hashrate != 20e6 || e.PowerWatts != 151 || e.Version != "1.23.2" {
+	if e.Device != "GeForce RTX 3060" || e.Miner != "rigel" || e.Algorithm != "kawpow" || e.Hashrate != 20e6 || e.PowerWatts != 151 || e.Version != "1.23.2" || e.Reports != 3 {
 		t.Errorf("entry = %+v", e)
 	}
 

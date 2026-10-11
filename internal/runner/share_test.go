@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"rbm/internal/estimate"
 	"rbm/internal/share"
 	"rbm/internal/stats"
 )
@@ -110,5 +111,67 @@ func TestHashratesAreExchangedOnlyAsAsked(t *testing.T) {
 	app.exchangeHashrates(ctx)
 	if entries, _ := share.LoadCache(dataDir); len(entries) != 1 || entries[0].Hashrate != 21e6 {
 		t.Errorf("fetched although turned off: %+v", entries)
+	}
+}
+
+func TestSharedListsWhatIsKnown(t *testing.T) {
+	app, _ := testApp(t)
+	app.cfg.General.Sharing.URL = ""
+	if err := app.RefreshShared(context.Background()); err == nil {
+		t.Error("a refresh without a server")
+	}
+
+	// before anything is fetched, the list is what comes with the program
+	info, err := app.Shared()
+	if err != nil || len(info.Entries) == 0 || info.Fetched != nil || !info.Used || info.Upload {
+		t.Fatalf("info = %+v, %v", info, err)
+	}
+	var mine, others int
+	for _, e := range info.Entries {
+		if e.Reports != 0 || e.OwnHashrate != 0 {
+			t.Errorf("entry = %+v", e)
+		}
+		// the test rig has an RTX 3060 and no RTX 2080 SUPER
+		if e.Mine != (e.Device == "GeForce RTX 3060") {
+			t.Errorf("mine is wrong for %+v", e)
+		}
+		if e.Mine {
+			mine++
+		} else {
+			others++
+		}
+	}
+	if mine == 0 || others == 0 {
+		t.Errorf("%d of this rig's cards, %d of others", mine, others)
+	}
+
+	// what the server handed out comes on top, with the number of rigs,
+	// next to what this rig measured itself
+	if err := share.SaveCache(app.cfg.General.DataDir, []estimate.Entry{
+		{Device: "GeForce RTX 3060", Miner: "rigel", Version: "1.23.2", Algorithm: "kawpow", Hashrate: 21e6, PowerWatts: 150, Reports: 5}}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	store, err := stats.Open(filepath.Join(t.TempDir(), "stats.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	var st stats.Stat
+	st.Update(19.8e6, 5*time.Minute, time.Now(), 0)
+	store.Save(stats.HashrateKey("rigel", []string{"GPU#00"}, "kawpow"), st)
+	app.setStore(store)
+
+	info, _ = app.Shared()
+	found := false
+	for _, e := range info.Entries {
+		if e.Device == "GeForce RTX 3060" && e.Miner == "rigel" && e.Algorithm == "kawpow" {
+			found = true
+			if e.Hashrate != 21e6 || e.Reports != 5 || e.OwnHashrate != 19.8e6 || !e.Mine {
+				t.Errorf("entry = %+v", e)
+			}
+		}
+	}
+	if !found || info.Fetched == nil {
+		t.Errorf("the fetched figure is missing: fetched %v", info.Fetched)
 	}
 }

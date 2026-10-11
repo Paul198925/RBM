@@ -59,7 +59,7 @@ func (c *Client) Estimates(ctx context.Context) ([]estimate.Entry, error) {
 			continue
 		}
 		entries = append(entries, estimate.Entry{Device: e.Device, Miner: e.Miner, Version: e.Version, Algorithm: e.Algorithm,
-			Hashrate: e.Hashrate, PowerWatts: e.PowerWatts})
+			Hashrate: e.Hashrate, PowerWatts: e.PowerWatts, Reports: max(e.Reports, 1)})
 	}
 	return entries, nil
 }
