@@ -35,7 +35,9 @@ type LaunchSpec struct {
 	Devices    []device.Device
 	Offer      pool.Offer
 	TLS        bool
-	DataDir    string
+	// Threads limits a CPU miner, 0 lets the miner decide.
+	Threads int
+	DataDir string
 	// Tag tells the log files of several miners apart.
 	Tag string
 }
@@ -88,6 +90,7 @@ func Launch(ctx context.Context, spec LaunchSpec) (Miner, error) {
 		TLS:           spec.TLS,
 		User:          spec.Offer.User,
 		Pass:          spec.Offer.Pass,
+		Threads:       spec.Threads,
 	})
 	if err != nil {
 		return nil, err

@@ -434,12 +434,18 @@ func TestStopAll(t *testing.T) {
 }
 
 func TestGroupDevices(t *testing.T) {
-	groups := groupDevices([]device.Device{
+	devices := []device.Device{
 		{ID: "CPU#00", Kind: device.CPU},
 		{ID: "GPU#02", Kind: device.GPU, Vendor: "NVIDIA", Model: "GeForce RTX 3060", Index: 2},
 		{ID: "GPU#01", Kind: device.GPU, Vendor: "NVIDIA", Model: "GeForce RTX 2080 SUPER", Index: 1},
 		{ID: "GPU#00", Kind: device.GPU, Vendor: "NVIDIA", Model: "GeForce RTX 3060", Index: 0},
-	})
+	}
+	// the CPU only mines if asked to, and comes last
+	withCPU := groupDevices(devices, true)
+	if len(withCPU) != 3 || withCPU[2].name != "CPU" || withCPU[2].vendor != miner.VendorCPU {
+		t.Fatalf("with cpu: %d groups", len(withCPU))
+	}
+	groups := groupDevices(devices, false)
 	if len(groups) != 2 {
 		t.Fatalf("%d groups", len(groups))
 	}
@@ -451,7 +457,7 @@ func TestGroupDevices(t *testing.T) {
 	}
 }
 
-func TestNewNeedsAGPU(t *testing.T) {
+func TestNewNeedsADevice(t *testing.T) {
 	_, err := New(Options{}, Deps{
 		Store:   &stats.Store{},
 		Sources: []pool.Source{&fakeSource{}},
@@ -459,7 +465,7 @@ func TestNewNeedsAGPU(t *testing.T) {
 		Launch:  func(context.Context, LaunchSpec) (Miner, error) { return nil, nil },
 		Logf:    func(string, ...any) {},
 	})
-	if err == nil || !strings.Contains(err.Error(), "no GPU") {
+	if err == nil || !strings.Contains(err.Error(), "no device") {
 		t.Errorf("err = %v", err)
 	}
 }

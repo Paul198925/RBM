@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -56,6 +57,14 @@ type Options struct {
 	PowerCurrency    string
 	TLS              bool
 	DataDir          string
+
+	// CPUEnabled lets the CPU mine as well.
+	CPUEnabled bool
+	// CPUWatts is the assumed power draw of the CPU while mining; it
+	// cannot be measured the way a GPU's can.
+	CPUWatts float64
+	// CPUThreads limits the CPU miner, 0 lets the miner decide.
+	CPUThreads int
 }
 
 // Deps is what the engine works with. Everything that touches the outside
@@ -87,6 +96,10 @@ type Engine struct {
 
 	rate      float64 // power currency per BTC, 0 if unknown
 	rateTried time.Time
+	params    selector.Params
+
+	mu     sync.Mutex
+	status Status
 }
 
 // group is a set of identical devices that mine together with one miner.
@@ -99,6 +112,10 @@ type group struct {
 	// failures and the time a candidate is taken out until, by candidate ID
 	crashes  map[string][]time.Time
 	disabled map[string]time.Time
+
+	// what the last round saw and decided, for the status
+	options  []option
+	decision selector.Decision
 }
 
 // option is a candidate together with what is needed to start it.
@@ -135,37 +152,52 @@ func New(opts Options, deps Deps) (*Engine, error) {
 	e := &Engine{
 		opts:     opts,
 		deps:     deps,
-		groups:   groupDevices(deps.Devices),
+		groups:   groupDevices(deps.Devices, opts.CPUEnabled),
 		offers:   map[string][]pool.Offer{},
 		offersAt: map[string]time.Time{},
 	}
 	if len(e.groups) == 0 {
-		return nil, errors.New("no GPU found to mine with")
+		return nil, errors.New("no device found to mine with")
 	}
 	return e, nil
 }
 
-// groupDevices puts the GPUs of the same model into one group each.
-func groupDevices(devices []device.Device) []*group {
-	byName := map[string]*group{}
-	for _, d := range devices {
-		if d.Kind != device.GPU {
-			continue
-		}
-		name := groupName(d.Model)
-		g := byName[d.Vendor+"/"+name]
-		if g == nil {
-			g = &group{name: name, vendor: d.Vendor, crashes: map[string][]time.Time{}, disabled: map[string]time.Time{}}
-			byName[d.Vendor+"/"+name] = g
-		}
-		g.devices = append(g.devices, d)
+// groupDevices puts the GPUs of the same model into one group each, and the
+// CPU into a group of its own if it is to mine. The GPU groups come first.
+func groupDevices(devices []device.Device, cpu bool) []*group {
+	newGroup := func(name, vendor string) *group {
+		return &group{name: name, vendor: vendor, crashes: map[string][]time.Time{}, disabled: map[string]time.Time{}}
 	}
-	groups := make([]*group, 0, len(byName))
+	byName := map[string]*group{}
+	var cpuGroup *group
+	for _, d := range devices {
+		switch d.Kind {
+		case device.GPU:
+			name := groupName(d.Model)
+			g := byName[d.Vendor+"/"+name]
+			if g == nil {
+				g = newGroup(name, d.Vendor)
+				byName[d.Vendor+"/"+name] = g
+			}
+			g.devices = append(g.devices, d)
+		case device.CPU:
+			if cpu {
+				if cpuGroup == nil {
+					cpuGroup = newGroup("CPU", miner.VendorCPU)
+				}
+				cpuGroup.devices = append(cpuGroup.devices, d)
+			}
+		}
+	}
+	groups := make([]*group, 0, len(byName)+1)
 	for _, g := range byName {
 		sort.Slice(g.devices, func(i, j int) bool { return g.devices[i].Index < g.devices[j].Index })
 		groups = append(groups, g)
 	}
 	sort.Slice(groups, func(i, j int) bool { return groups[i].devices[0].Index < groups[j].devices[0].Index })
+	if cpuGroup != nil {
+		groups = append(groups, cpuGroup)
+	}
 	return groups
 }
 
@@ -250,6 +282,8 @@ func (e *Engine) round(ctx context.Context, now time.Time) error {
 	if e.opts.PowerPricePerKWh > 0 && e.rate > 0 {
 		params.PowerCostBTCPerKWh = e.opts.PowerPricePerKWh / e.rate
 	}
+	e.params = params
+	defer e.publish(now)
 
 	for _, g := range e.groups {
 		if ctx.Err() != nil {
@@ -301,6 +335,7 @@ func (e *Engine) round(ctx context.Context, now time.Time) error {
 				g.run.option = o
 			}
 		}
+		g.options, g.decision = options, decision
 		e.report(g, decision, params)
 	}
 	return nil
@@ -534,7 +569,8 @@ func (e *Engine) start(ctx context.Context, g *group, o option, decision selecto
 		Algorithm:  o.algo,
 		Devices:    g.devices,
 		Offer:      o.offer,
-		TLS:        e.opts.TLS && o.offer.TLSPort != 0,
+		TLS:        e.opts.TLS && o.offer.TLSPort != 0 && o.def.SupportsTLS(),
+		Threads:    e.threads(g),
 		DataDir:    e.opts.DataDir,
 		Tag:        g.name,
 	})
@@ -554,6 +590,14 @@ func (e *Engine) start(ctx context.Context, g *group, o option, decision selecto
 		measureFrom: now.Add(warmup),
 		lastStore:   now,
 	}
+}
+
+// threads returns the thread limit for the miner of g, 0 for none.
+func (e *Engine) threads(g *group) int {
+	if g.vendor == miner.VendorCPU {
+		return e.opts.CPUThreads
+	}
+	return 0
 }
 
 // stop ends the miner of g. The stop gets its own context: it must also
@@ -580,6 +624,7 @@ func (e *Engine) stopAll() {
 // poll reads the statistics of all running miners. It reports whether one
 // of them has exited.
 func (e *Engine) poll(ctx context.Context, now time.Time) (exited bool) {
+	defer e.publish(now)
 	var gpuPower map[int]float64
 	for _, g := range e.groups {
 		r := g.run
@@ -604,7 +649,9 @@ func (e *Engine) poll(ctx context.Context, now time.Time) (exited bool) {
 		}
 		r.apiErrors = 0
 		sample.Time = now
-		if sample.PowerWatts == 0 && e.deps.Power != nil {
+		if sample.PowerWatts == 0 && g.vendor == miner.VendorCPU {
+			sample.PowerWatts = e.opts.CPUWatts
+		} else if sample.PowerWatts == 0 && e.deps.Power != nil {
 			if gpuPower == nil {
 				gpuPower, _ = e.deps.Power(ctx)
 				if gpuPower == nil {
@@ -616,7 +663,7 @@ func (e *Engine) poll(ctx context.Context, now time.Time) (exited bool) {
 			}
 		}
 		r.window.Add(sample)
-		if sample.Algorithms[r.algo.NameForMiner()].Hashrate > 0 {
+		if sample.For(r.algo.NameForMiner()).Hashrate > 0 {
 			r.lastHash = now
 		}
 	}
@@ -685,7 +732,7 @@ func (e *Engine) report(g *group, decision selector.Decision, params selector.Pa
 	var live miner.AlgoSample
 	var power float64
 	if last, ok := r.window.Last(); ok {
-		live = last.Algorithms[r.algo.NameForMiner()]
+		live = last.For(r.algo.NameForMiner())
 		power = last.PowerWatts
 	}
 	line := fmt.Sprintf("%s: %s/%s %s  %.0f W  shares %d/%d/%d",

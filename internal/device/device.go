@@ -22,16 +22,16 @@ const (
 // Device is one GPU or the CPU.
 type Device struct {
 	// ID is unique on this rig: "GPU#00", "CPU#00".
-	ID     string
-	Kind   Kind
-	Vendor string
-	Model  string
+	ID     string `json:"id"`
+	Kind   Kind   `json:"kind"`
+	Vendor string `json:"vendor,omitempty"`
+	Model  string `json:"model"`
 	// Index is the device number its vendor tools use (nvidia-smi index).
-	Index     int
-	MemoryMiB int
-	UUID      string
+	Index     int    `json:"index"`
+	MemoryMiB int    `json:"memory_mib,omitempty"`
+	UUID      string `json:"uuid,omitempty"`
 	// Threads is the number of logical processors, for the CPU.
-	Threads int
+	Threads int `json:"threads,omitempty"`
 }
 
 const smiTimeout = 15 * time.Second
