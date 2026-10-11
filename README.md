@@ -128,7 +128,7 @@ Rigs can also exchange their hashrates through a server, set under `sharing` in 
 - `download: true` (the default) fetches twice a day what other rigs measured. It wins over the list that comes with hashsteer, and counts from the next start of the miners.
 - `upload: true` sends what this rig measured: card model, miner program with version, algorithm, hashrate and power draw, under a random number the rig makes up for itself. It is off unless you turn it on.
 
-The page **Shared Hashrates** in the web interface lists these figures, with the number of rigs behind each and, next to it, what your own rig measured.
+The page **Shared Hashrates** in the web interface lists these figures, with the number of rigs behind each and, next to it, what your own rig measured. The same list is public at <https://hashsteer-share.cylvaro.cloud/>, to look up what a card does before you have one.
 
 The server hands out the median per card, miner program and algorithm, so that one rig with a wrong figure moves it little. It is not part of this repository. What hashsteer sends to it and takes from it is in [`internal/share`](internal/share); whatever comes from the server is checked the same way as what a rig may send.
 
