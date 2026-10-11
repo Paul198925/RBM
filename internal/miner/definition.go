@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"regexp"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -234,12 +235,15 @@ type Job struct {
 	Algorithm Algorithm
 	// DeviceIndexes are the vendor indexes of the devices to mine on.
 	DeviceIndexes []int
-	APIPort       int
-	Host          string
-	Port          int
-	TLS           bool
-	User          string
-	Pass          string
+	// DevicePCI are the PCI addresses of the same devices, for the miners
+	// that name cards that way.
+	DevicePCI []string
+	APIPort   int
+	Host      string
+	Port      int
+	TLS       bool
+	User      string
+	Pass      string
 	// EthMode names the pool's stratum dialect, empty for the usual one.
 	EthMode string
 	// Threads limits a CPU miner, 0 lets the miner decide.
@@ -277,19 +281,23 @@ func (d *Definition) BuildArgs(job Job) ([]string, error) {
 	for i, index := range job.DeviceIndexes {
 		indexes[i] = strconv.Itoa(index)
 	}
+	// every card needs an address for a miner that goes by them
+	pciKnown := len(job.DevicePCI) == len(job.DeviceIndexes) && !slices.Contains(job.DevicePCI, "")
 	values := map[string]string{
 		"{api_port}": strconv.Itoa(job.APIPort),
 		"{devices}":  strings.Join(indexes, ","),
-		"{algo}":     job.Algorithm.NameForMiner(),
-		"{scheme}":   scheme,
-		"{tls}":      tls,
-		"{tls_bool}": tlsBool,
-		"{tls_01}":   tls01,
-		"{host}":     job.Host,
-		"{port}":     strconv.Itoa(job.Port),
-		"{user}":     job.User,
-		"{pass}":     job.Pass,
-		"{threads}":  strconv.Itoa(job.Threads),
+		// the cards by where they sit on the PCI bus: "01:00,0a:00"
+		"{pci_devices}": strings.Join(job.DevicePCI, ","),
+		"{algo}":        job.Algorithm.NameForMiner(),
+		"{scheme}":      scheme,
+		"{tls}":         tls,
+		"{tls_bool}":    tlsBool,
+		"{tls_01}":      tls01,
+		"{host}":        job.Host,
+		"{port}":        strconv.Itoa(job.Port),
+		"{user}":        job.User,
+		"{pass}":        job.Pass,
+		"{threads}":     strconv.Itoa(job.Threads),
 	}
 
 	var problems []string
@@ -308,6 +316,8 @@ func (d *Definition) BuildArgs(job Job) ([]string, error) {
 				problems = append(problems, "unknown placeholder "+ph)
 			case ph == "{scheme}" && v == "":
 				problems = append(problems, "no scheme defined for this connection")
+			case ph == "{pci_devices}" && !pciKnown:
+				problems = append(problems, "the PCI address of a card is not known")
 			}
 			return v
 		}))

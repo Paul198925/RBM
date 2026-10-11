@@ -30,6 +30,9 @@ type Device struct {
 	Index     int    `json:"index"`
 	MemoryMiB int    `json:"memory_mib,omitempty"`
 	UUID      string `json:"uuid,omitempty"`
+	// PCI is where a GPU sits on the PCI bus, as "bus:device" in two hex
+	// digits each, e.g. "01:00". Empty if the driver does not say.
+	PCI string `json:"pci,omitempty"`
 	// Threads is the number of logical processors, for the CPU.
 	Threads int `json:"threads,omitempty"`
 }
@@ -53,7 +56,7 @@ func Detect(ctx context.Context) ([]Device, error) {
 }
 
 func detectNvidia(ctx context.Context) ([]Device, error) {
-	out, err := nvidiaSMI(ctx, "--query-gpu=index,name,memory.total,uuid")
+	out, err := nvidiaSMI(ctx, "--query-gpu=index,name,memory.total,uuid,pci.bus_id")
 	if errors.Is(err, exec.ErrNotFound) {
 		return nil, nil
 	}
@@ -101,7 +104,7 @@ func nvidiaSMI(ctx context.Context, query string) (string, error) {
 func parseNvidiaGPUs(out string) ([]Device, error) {
 	var devices []Device
 	for _, fields := range csvLines(out) {
-		if len(fields) != 4 {
+		if len(fields) != 5 {
 			return nil, fmt.Errorf("nvidia-smi: unexpected line %q", strings.Join(fields, ", "))
 		}
 		index, err := strconv.Atoi(fields[0])
@@ -120,9 +123,28 @@ func parseNvidiaGPUs(out string) ([]Device, error) {
 			Index:     index,
 			MemoryMiB: memory,
 			UUID:      fields[3],
+			PCI:       pciAddress(fields[4]),
 		})
 	}
 	return devices, nil
+}
+
+// pciAddress shortens nvidia-smi's "00000000:01:00.0" to "01:00": bus and
+// device, without the domain and the function. It is empty for anything
+// that does not look like such an address.
+func pciAddress(busID string) string {
+	parts := strings.Split(busID, ":")
+	if len(parts) != 3 {
+		return ""
+	}
+	bus, device, _ := parts[1], "", ""
+	device, _, _ = strings.Cut(parts[2], ".")
+	for _, part := range []string{bus, device} {
+		if _, err := strconv.ParseUint(part, 16, 8); err != nil || len(part) != 2 {
+			return ""
+		}
+	}
+	return strings.ToLower(bus + ":" + device)
 }
 
 func csvLines(out string) [][]string {

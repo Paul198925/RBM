@@ -80,12 +80,14 @@ func Launch(ctx context.Context, spec LaunchSpec) (Miner, error) {
 		return nil, err
 	}
 	indexes := make([]int, len(spec.Devices))
+	pci := make([]string, len(spec.Devices))
 	for i, d := range spec.Devices {
-		indexes[i] = d.Index
+		indexes[i], pci[i] = d.Index, d.PCI
 	}
 	args, err := def.BuildArgs(miner.Job{
 		Algorithm:     spec.Algorithm,
 		DeviceIndexes: indexes,
+		DevicePCI:     pci,
 		APIPort:       apiPort,
 		Host:          spec.Offer.Host,
 		Port:          port,

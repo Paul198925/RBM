@@ -74,9 +74,11 @@ func Mine(ctx context.Context, cfg *config.Config, opts ManualOptions, out io.Wr
 	}
 	var deviceIDs []string
 	var deviceIndexes []int
+	var devicePCI []string
 	for _, d := range devices {
 		deviceIDs = append(deviceIDs, d.ID)
 		deviceIndexes = append(deviceIndexes, d.Index)
+		devicePCI = append(devicePCI, d.PCI)
 		logf("using %s: %s", d.ID, d.Model)
 	}
 
@@ -141,6 +143,7 @@ func Mine(ctx context.Context, cfg *config.Config, opts ManualOptions, out io.Wr
 	args, err := def.BuildArgs(miner.Job{
 		Algorithm:     minerAlgo,
 		DeviceIndexes: deviceIndexes,
+		DevicePCI:     devicePCI,
 		APIPort:       apiPort,
 		Host:          offer.Host,
 		Port:          port,
