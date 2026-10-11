@@ -152,3 +152,7 @@ RBM_UI_DEMO=127.0.0.1:4011 go test ./internal/api -run TestDemoServer -timeout 0
 ## A word of caution
 
 Mining uses a lot of electricity and wears hardware; whether it pays depends on your power price. rbm cannot check a wallet address: a wrong one sends what you mine to someone else. The miner programs are other people's software, mostly closed source, run with your user's rights.
+
+## License
+
+rbm is under the [MIT License](LICENSE). The miner programs it downloads are not part of it; each has its own license and terms.
