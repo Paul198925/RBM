@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"rbm/internal/estimate"
+	"hashsteer/internal/estimate"
 )
 
 // fakeServer stands in for the share server: it keeps what is sent to it

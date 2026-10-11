@@ -27,7 +27,7 @@ async function api(path, options) {
     opts.headers['Content-Type'] = 'application/json';
     opts.body = JSON.stringify(opts.body);
   }
-  if (opts.method && opts.method !== 'GET') opts.headers['X-RBM-Request'] = '1';
+  if (opts.method && opts.method !== 'GET') opts.headers['X-Hashsteer-Request'] = '1';
   const res = await fetch(path, opts);
   if (!res.ok) {
     let message = res.status + ' ' + res.statusText;
@@ -235,7 +235,7 @@ function topItem(label, value) {
 function pauseButton() {
   const paused = state.status.system.paused;
   return h('button', { class: paused ? 'primary' : 'warn', onclick: () => setPaused(!paused),
-    title: paused ? 'Start the miners again' : 'Stop all miners, keep rbm running' }, paused ? 'Resume' : 'Pause');
+    title: paused ? 'Start the miners again' : 'Stop all miners, keep hashsteer running' }, paused ? 'Resume' : 'Pause');
 }
 
 function renderTopbar() {
@@ -273,14 +273,14 @@ function updateBox() {
   const notes = u.page ? h('a', { href: u.page, target: '_blank', rel: 'noopener' }, 'What is new') : null;
   if (u.downloaded) {
     return h('div', { class: 'eta' },
-      h('div', { class: 'main' }, 'rbm ' + u.downloaded + ' is fetched and checked.'),
-      h('div', { class: 'help' }, u.restartable ? 'rbm restarts to let it take over.' : 'It takes over the next time rbm is started with start.bat or start.sh.'));
+      h('div', { class: 'main' }, 'hashsteer ' + u.downloaded + ' is fetched and checked.'),
+      h('div', { class: 'help' }, u.restartable ? 'hashsteer restarts to let it take over.' : 'It takes over the next time hashsteer is started with start.bat or start.sh.'));
   }
   return h('div', { class: 'eta' },
-    h('div', { class: 'title' }, h('div', { class: 'main' }, 'rbm ' + u.latest + ' is available. This is ' + u.current + '.'),
+    h('div', { class: 'title' }, h('div', { class: 'main' }, 'hashsteer ' + u.latest + ' is available. This is ' + u.current + '.'),
       h('button', { class: 'primary', disabled: u.busy, onclick: installUpdate }, u.busy ? 'Fetching ...' : 'Update now'), notes),
     h('div', { class: 'help' }, 'The release is fetched from GitHub and checked against the checksum GitHub lists for it. ' +
-      (u.restartable ? 'Then rbm stops its miners and restarts with the new version.' : 'It then waits for the next start: this rbm was not started with start.bat or start.sh, so it cannot restart itself.')),
+      (u.restartable ? 'Then hashsteer stops its miners and restarts with the new version.' : 'It then waits for the next start: this hashsteer was not started with start.bat or start.sh, so it cannot restart itself.')),
     u.error ? h('div', { class: 'help error' }, u.error) : null);
 }
 
@@ -292,12 +292,12 @@ async function loadUpdate(force) {
 
 async function installUpdate() {
   const u = state.update;
-  if (!confirm('Update rbm to ' + u.latest + ' now?' + (u.restartable ? ' The miners stop and rbm restarts.' : ''))) return;
+  if (!confirm('Update hashsteer to ' + u.latest + ' now?' + (u.restartable ? ' The miners stop and hashsteer restarts.' : ''))) return;
   state.update = Object.assign({}, u, { busy: true });
   render();
   try {
     state.update = await api('/api/update/install', { method: 'POST' });
-    toast(state.update.restartable ? 'Fetched - rbm restarts' : 'Fetched - it takes over at the next start');
+    toast(state.update.restartable ? 'Fetched - hashsteer restarts' : 'Fetched - it takes over at the next start');
   } catch (e) {
     toast('Not updated: ' + e.message, true);
     await loadUpdate(true);
@@ -309,7 +309,7 @@ async function checkUpdate() {
   try {
     state.update = await api('/api/update/check', { method: 'POST' });
     state.updateAt = Date.now();
-    toast(state.update.available ? 'rbm ' + state.update.latest + ' is available' : 'This is the newest version');
+    toast(state.update.available ? 'hashsteer ' + state.update.latest + ' is available' : 'This is the newest version');
   } catch (e) { toast(e.message, true); }
   render();
 }
@@ -417,7 +417,7 @@ function card(label, value, sub) {
 
 function renderDevices() {
   return h('div', {}, h('h1', {}, 'Devices'),
-    h('p', { class: 'lead' }, 'The devices rbm found. Which of them mine is set under Setup Devices.'),
+    h('p', { class: 'lead' }, 'The devices hashsteer found. Which of them mine is set under Setup Devices.'),
     dataTable('devices', deviceColumns(true), state.devices, { empty: 'No device was found.' }).el);
 }
 
@@ -743,7 +743,7 @@ function renderShared() {
     { key: 'hashrate', label: 'Speed', num: true, cell: e => fmtHash(e.hashrate) },
     { key: 'power_watts', label: 'Power', num: true, cell: e => fmtWatts(e.power_watts) },
     { key: 'reports', label: 'Rigs', num: true,
-      cell: e => (e.reports > 0 ? e.reports : h('span', { class: 'help', title: 'This figure comes with rbm, not from the share server.' }, 'built in')) },
+      cell: e => (e.reports > 0 ? e.reports : h('span', { class: 'help', title: 'This figure comes with hashsteer, not from the share server.' }, 'built in')) },
     { key: 'own_hashrate', label: 'Measured here', num: true, cell: e => (e.own_hashrate > 0 ? fmtHash(e.own_hashrate) : '') },
     { key: 'diff', label: 'Difference', num: true, value: e => (diff(e) === null ? -1000 : diff(e)),
       cell: e => (diff(e) === null ? '' : (diff(e) > 0 ? '+' : '') + diff(e).toFixed(1) + ' %'),
@@ -751,15 +751,15 @@ function renderShared() {
   ], rows, { empty: 'No shared hashrates are known.', sort: { key: 'device', dir: 1 } });
 
   const where = info.url
-    ? [info.fetched ? 'Last fetched from ' + info.url + ' ' + fmtAgo(info.fetched) + ' ago.' : 'Nothing was fetched from ' + info.url + ' yet; the figures below come with rbm.',
+    ? [info.fetched ? 'Last fetched from ' + info.url + ' ' + fmtAgo(info.fetched) + ' ago.' : 'Nothing was fetched from ' + info.url + ' yet; the figures below come with hashsteer.',
       info.download ? '' : ' Fetching is turned off.',
       info.upload ? ' This rig shares what it measures.' : ' This rig does not share what it measures.']
-    : ['No share server is set; the figures below come with rbm.'];
+    : ['No share server is set; the figures below come with hashsteer.'];
   return h('div', {},
     h('div', { class: 'title' }, h('h1', {}, 'Shared Hashrates'),
       h('button', { class: 'primary', disabled: !info.url, onclick: refreshShared }, info.upload ? 'Fetch and share now' : 'Fetch now')),
     h('p', { class: 'lead' }, 'What other rigs measured, per card, miner program and algorithm: the middle of what was reported. ' +
-      (info.used ? 'rbm starts from these figures for your cards until it has measured them itself.' : 'They are not used: "Start from estimates" is turned off under Setup.') +
+      (info.used ? 'hashsteer starts from these figures for your cards until it has measured them itself.' : 'They are not used: "Start from estimates" is turned off under Setup.') +
       ' The same card is faster or slower with another driver, clock or power limit; "Measured here" shows what yours does.'),
     h('p', { class: 'help' }, where.join(''), ' ', h('a', { href: '#/setup' }, 'Change this under Setup.')),
     h('div', { class: 'toolbar' },
@@ -913,7 +913,7 @@ function setupGeneral() {
       numberField('Hysteresis in percent', 'general.switching.hysteresis_percent', 'Another candidate must earn this much more before the running miner is stopped for it.'),
       textField('Minimum run time', 'general.switching.min_run_time', 'A started miner is left alone for at least this long, e.g. 5m.'),
       textField('Benchmark time', 'general.switching.benchmark_time', 'Measured mining time a miner needs before its hashrate is trusted, e.g. 3m.'),
-      boolField('Start from estimates', 'general.switching.use_estimates', 'Where rbm comes with a hashrate that was measured on another machine with the same card, it mines by that figure at once instead of benchmarking first. What is mined is measured, and the measurement replaces the estimate. The same card can be faster or slower here; turn this off to measure everything yourself before anything is mined for profit.')),
+      boolField('Start from estimates', 'general.switching.use_estimates', 'Where hashsteer comes with a hashrate that was measured on another machine with the same card, it mines by that figure at once instead of benchmarking first. What is mined is measured, and the measurement replaces the estimate. The same card can be faster or slower here; turn this off to measure everything yourself before anything is mined for profit.')),
     h('div', { class: 'section' }, h('h3', {}, 'CPU'),
       boolField('Mine with the CPU', 'general.cpu.enabled', 'Off by default: it makes the machine slow for everything else, and the GPU miners need some CPU time themselves.'),
       numberField('CPU Mining Threads', 'general.cpu.threads', '0 lets the miner decide.', '1'),
@@ -922,17 +922,17 @@ function setupGeneral() {
       numberField('Min. Free RAM, in GB', 'general.memory.min_free_ram_gb', 'Main memory (RAM and page file together) that is left for everything else. A miner whose algorithm needs more than the rest is not started. This is what keeps two miners from building a large DAG at the same time and running the machine out of memory.', '0.5'),
       numberField('Reserved GPU VRAM, in GB', 'general.memory.reserved_vram_gb', 'Graphics memory that is left alone on every card, for example for the desktop.', '0.1')),
     h('div', { class: 'section' }, h('h3', {}, 'Shared hashrates'),
-      textField('Server', 'general.sharing.url', 'The address rigs exchange their measured hashrates through. Empty exchanges nothing; the estimates that come with rbm are still used.'),
+      textField('Server', 'general.sharing.url', 'The address rigs exchange their measured hashrates through. Empty exchanges nothing; the estimates that come with hashsteer are still used.'),
       boolField('Fetch what others measured', 'general.sharing.download', 'Twice a day, fetch the hashrates other rigs measured with the same cards, to start from them. They count from the next start of the miners.'),
       boolField('Share what this rig measured', 'general.sharing.upload', 'Twice a day, send the hashrates measured here: card model, miner program with version, algorithm, hashrate and power draw, under a random number made up for this rig. No wallet, no rig name. Off unless you turn it on.')),
     h('div', { class: 'section' }, h('h3', {}, 'Updates'),
       field('This version', state.update && state.update.latest
-        ? (state.update.available ? 'rbm ' + state.update.latest + ' is available.' : 'This is the newest version.') : 'GitHub has not been asked yet.',
+        ? (state.update.available ? 'hashsteer ' + state.update.latest + ' is available.' : 'This is the newest version.') : 'GitHub has not been asked yet.',
         [h('code', {}, state.meta.version), ' ', h('button', { class: 'small', onclick: checkUpdate }, 'Check now')]),
       boolField('Look for updates', 'general.updates.check', 'Ask GitHub a few times a day whether there is a newer release, and say so on the dashboard. Nothing is installed by this.'),
-      boolField('Install updates by themselves', 'general.updates.auto', 'Fetch and start a newer release without asking, as soon as it is found. Off by default: rbm then runs whatever is published as a release of this project, without anyone looking at it first. It only works where rbm was started with start.bat or start.sh.')),
+      boolField('Install updates by themselves', 'general.updates.auto', 'Fetch and start a newer release without asking, as soon as it is found. Off by default: hashsteer then runs whatever is published as a release of this project, without anyone looking at it first. It only works where hashsteer was started with start.bat or start.sh.')),
     h('div', { class: 'section' }, h('h3', {}, 'Machine\'s localhost API setup'),
-      textField('Listen address', 'general.api.listen', 'host:port. 127.0.0.1 is only reachable from this machine. A change takes effect after rbm is restarted. Empty turns the interface off.'),
+      textField('Listen address', 'general.api.listen', 'host:port. 127.0.0.1 is only reachable from this machine. A change takes effect after hashsteer is restarted. Empty turns the interface off.'),
       textField('Password', 'general.api.password', 'Without a password the interface only works on this machine. With one, every access needs it (the user name does not matter). Use it only on a network you trust: the connection is not encrypted.', 'password')),
   ];
 }
@@ -996,7 +996,7 @@ function setupWallets() {
     h('td', { class: 'users' }, users(row)),
     h('td', {}, h('button', { class: 'small', onclick: () => { rows.splice(rows.indexOf(row), 1); storeWallets(); render(); } }, 'Remove')));
   return h('div', { class: 'section' }, h('h3', {}, 'Wallets'),
-    h('p', { class: 'help' }, 'One payout address per coin, used by every pool that can. ' + state.meta.coin_pools.map(p => p.title).join(' and ') + ' pay every coin to its own wallet and mine the coins that have one here. zpool pays everything to the wallet of its payout coin. rbm cannot check an address; a wrong one is only noticed by the pool, or not at all.'),
+    h('p', { class: 'help' }, 'One payout address per coin, used by every pool that can. ' + state.meta.coin_pools.map(p => p.title).join(' and ') + ' pay every coin to its own wallet and mine the coins that have one here. zpool pays everything to the wallet of its payout coin. hashsteer cannot check an address; a wrong one is only noticed by the pool, or not at all.'),
     rows.length ? h('table', { class: 'wallets' },
       h('thead', {}, h('tr', {}, h('th', {}, 'Coin'), h('th', {}, 'Address'), h('th', {}, 'Used by'), h('th', {}))),
       h('tbody', {}, rows.map(line))) : h('div', { class: 'empty' }, 'No wallet yet.'),
@@ -1134,7 +1134,7 @@ function renderConsole() {
     state.minerLogs.map(f => h('option', { value: f.name, selected: f.name === state.minerLog.name },
       f.name + '   (' + Math.max(1, Math.round(f.size / 1024)) + ' kB)')));
   const out = h('div', {}, h('h1', {}, 'Console'),
-    h('h2', { class: 'first' }, 'rbm'), engineLog,
+    h('h2', { class: 'first' }, 'hashsteer'), engineLog,
     h('h2', {}, 'Miner programs'),
     h('div', { class: 'toolbar' }, select,
       h('button', { onclick: () => loadMinerLog(state.minerLog.name), disabled: !state.minerLog.name }, 'Reload')),
@@ -1177,7 +1177,7 @@ async function refreshStatus() {
     conn.textContent = 'connected';
     conn.className = 'conn';
   } catch (e) {
-    conn.textContent = 'no connection to rbm';
+    conn.textContent = 'no connection to hashsteer';
     conn.className = 'conn down';
     return;
   }

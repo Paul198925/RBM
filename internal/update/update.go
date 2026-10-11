@@ -1,4 +1,4 @@
-// Package update looks for newer releases of rbm on GitHub and fetches them.
+// Package update looks for newer releases of hashsteer on GitHub and fetches them.
 // What it fetches is checked against the SHA-256 GitHub publishes for the
 // file. That guards against a broken or swapped download, not against a
 // release that should never have been published.
@@ -26,12 +26,12 @@ import (
 	"time"
 )
 
-const releasesAPI = "https://api.github.com/repos/Paul198925/RBM/releases?per_page=30"
+const releasesAPI = "https://api.github.com/repos/Paul198925/hashsteer/releases?per_page=30"
 
 // maxDownload is far above what a release weighs.
 const maxDownload = 200 << 20
 
-// Release is a published version of rbm for this system.
+// Release is a published version of hashsteer for this system.
 type Release struct {
 	// Version is the release's number without the leading "v".
 	Version string `json:"version"`
@@ -95,7 +95,7 @@ func (c *Checker) Latest(ctx context.Context) (release Release, ok bool, err err
 	if err != nil {
 		return Release{}, false, err
 	}
-	req.Header.Set("User-Agent", "rbm")
+	req.Header.Set("User-Agent", "hashsteer")
 	req.Header.Set("Accept", "application/vnd.github+json")
 	resp, err := c.client().Do(req)
 	if err != nil {
@@ -116,8 +116,8 @@ func (c *Checker) Latest(ctx context.Context) (release Release, ok bool, err err
 		if r.Draft || !valid(version) || (ok && !Newer(release.Version, version)) {
 			continue
 		}
-		// the file for this system: rbm-v1.2.3-linux-amd64.tar.gz
-		prefix := "rbm-" + r.TagName + "-" + goos + "-" + goarch + "."
+		// the file for this system: hashsteer-v1.2.3-linux-amd64.tar.gz
+		prefix := "hashsteer-" + r.TagName + "-" + goos + "-" + goarch + "."
 		for _, a := range r.Assets {
 			digest, hasDigest := strings.CutPrefix(a.Digest, "sha256:")
 			if !strings.HasPrefix(a.Name, prefix) || !hasDigest || len(digest) != 64 {
@@ -191,7 +191,7 @@ func (c *Checker) Download(ctx context.Context, release Release, target string) 
 	if err != nil {
 		return err
 	}
-	req.Header.Set("User-Agent", "rbm")
+	req.Header.Set("User-Agent", "hashsteer")
 	resp, err := c.client().Do(req)
 	if err != nil {
 		return fmt.Errorf("update: %w", err)
@@ -212,9 +212,9 @@ func (c *Checker) Download(ctx context.Context, release Release, target string) 
 	}
 
 	goos, _ := c.system()
-	program := "rbm"
+	program := "hashsteer"
 	if goos == "windows" {
-		program = "rbm.exe"
+		program = "hashsteer.exe"
 	}
 	var data []byte
 	if strings.HasSuffix(release.name, ".zip") {

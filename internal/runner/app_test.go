@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"rbm/internal/config"
-	"rbm/internal/device"
-	"rbm/internal/miner"
+	"hashsteer/internal/config"
+	"hashsteer/internal/device"
+	"hashsteer/internal/miner"
 )
 
 // syncBuffer is a console the app can write to while the test reads it.

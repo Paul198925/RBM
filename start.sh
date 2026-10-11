@@ -18,48 +18,48 @@ go_install_hint() {
         echo "  see https://go.dev/doc/install"
         return
     fi
-    echo "A Go from 1.21 on is enough: it fetches the version rbm needs by itself."
+    echo "A Go from 1.21 on is enough: it fetches the version hashsteer needs by itself."
     echo "Older ones are too old; take Go from https://go.dev/dl/ then."
 }
 
 # build the program from the source code next to this file, if that and Go
 # are there
-if [ ! -f rbm ] && [ ! -f rbm.new ]; then
-    if [ ! -f cmd/rbm/main.go ]; then
-        echo "rbm not found, and neither is its source code." >&2
-        echo "Get the program from https://github.com/Paul198925/RBM/releases" >&2
+if [ ! -f hashsteer ] && [ ! -f hashsteer.new ]; then
+    if [ ! -f cmd/hashsteer/main.go ]; then
+        echo "hashsteer not found, and neither is its source code." >&2
+        echo "Get the program from https://github.com/Paul198925/hashsteer/releases" >&2
         exit 1
     fi
     if ! command -v go >/dev/null 2>&1; then
         {
-            echo "rbm not found, and Go is not installed to build it. Install Go with:"
+            echo "hashsteer not found, and Go is not installed to build it. Install Go with:"
             go_install_hint
             echo "and start this again, or get the program from"
-            echo "https://github.com/Paul198925/RBM/releases"
+            echo "https://github.com/Paul198925/hashsteer/releases"
         } >&2
         exit 1
     fi
-    echo "rbm not found. Building it, this takes a minute the first time ..."
-    if ! CGO_ENABLED=0 go build -o rbm ./cmd/rbm; then
+    echo "hashsteer not found. Building it, this takes a minute the first time ..."
+    if ! CGO_ENABLED=0 go build -o hashsteer ./cmd/hashsteer; then
         echo "The build failed." >&2
-        rm -f rbm
+        rm -f hashsteer
         exit 1
     fi
-    echo "Built rbm."
+    echo "Built hashsteer."
 fi
 
-# tells rbm that it is started again when it ends to finish an update
-export RBM_RESTART=1
+# tells hashsteer that it is started again when it ends to finish an update
+export HASHSTEER_RESTART=1
 
 while :; do
     # a newer build waits next to the running program until the next start
-    if [ -f rbm.new ]; then
-        mv -f rbm.new rbm
+    if [ -f hashsteer.new ]; then
+        mv -f hashsteer.new hashsteer
     fi
-    chmod +x rbm
-    ./rbm run "$@"
+    chmod +x hashsteer
+    ./hashsteer run "$@"
     code=$?
-    # 75 is rbm asking to be started again, with the update it has fetched
+    # 75 is hashsteer asking to be started again, with the update it has fetched
     if [ "$code" -ne 75 ]; then
         exit "$code"
     fi

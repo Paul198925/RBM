@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"rbm/internal/miner"
-	"rbm/internal/stats"
+	"hashsteer/internal/miner"
+	"hashsteer/internal/stats"
 )
 
 func (s *sim) bench(hashKey string) BenchmarkStatus {

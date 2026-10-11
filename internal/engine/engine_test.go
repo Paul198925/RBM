@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"rbm/internal/device"
-	"rbm/internal/miner"
-	"rbm/internal/pool"
-	"rbm/internal/stats"
+	"hashsteer/internal/device"
+	"hashsteer/internal/miner"
+	"hashsteer/internal/pool"
+	"hashsteer/internal/stats"
 )
 
 const (
@@ -440,7 +440,7 @@ func TestLaunchFailureIsTakenOut(t *testing.T) {
 func TestStopAll(t *testing.T) {
 	s := newSim(t, Options{}, map[string]float64{"kawpow": 2e-10})
 	s.advance(time.Minute)
-	s.engine.stopAll()
+	s.engine.stopAll(s.now)
 	if !s.miners[0].stopped || s.running() != "" {
 		t.Error("miner survived stopAll")
 	}

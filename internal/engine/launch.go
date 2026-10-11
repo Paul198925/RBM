@@ -8,10 +8,10 @@ import (
 	"path/filepath"
 	"time"
 
-	"rbm/internal/device"
-	"rbm/internal/miner"
-	"rbm/internal/pool"
-	"rbm/internal/proc"
+	"hashsteer/internal/device"
+	"hashsteer/internal/miner"
+	"hashsteer/internal/pool"
+	"hashsteer/internal/proc"
 )
 
 // Miner is a running miner program as the engine sees it.

@@ -16,22 +16,22 @@ import (
 	"sync"
 	"time"
 
-	"rbm/internal/api"
-	"rbm/internal/config"
-	"rbm/internal/device"
-	"rbm/internal/engine"
-	"rbm/internal/estimate"
-	"rbm/internal/miner"
-	"rbm/internal/pool"
-	"rbm/internal/rates"
-	"rbm/internal/stats"
-	"rbm/internal/sysinfo"
-	"rbm/internal/update"
+	"hashsteer/internal/api"
+	"hashsteer/internal/config"
+	"hashsteer/internal/device"
+	"hashsteer/internal/engine"
+	"hashsteer/internal/estimate"
+	"hashsteer/internal/miner"
+	"hashsteer/internal/pool"
+	"hashsteer/internal/rates"
+	"hashsteer/internal/stats"
+	"hashsteer/internal/sysinfo"
+	"hashsteer/internal/update"
 )
 
 // Version is this build's number. It is shown in the interface, and what a
 // newer release is measured against. It is raised with every release.
-const Version = "0.3.1"
+const Version = "0.4.0"
 
 const (
 	logLines          = 1000

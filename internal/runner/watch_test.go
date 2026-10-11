@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"rbm/internal/config"
-	"rbm/internal/device"
-	"rbm/internal/pool"
-	"rbm/internal/stats"
+	"hashsteer/internal/config"
+	"hashsteer/internal/device"
+	"hashsteer/internal/pool"
+	"hashsteer/internal/stats"
 )
 
 func TestDevicesCarryTelemetry(t *testing.T) {

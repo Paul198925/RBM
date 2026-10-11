@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"rbm/internal/miner"
+	"hashsteer/internal/miner"
 )
 
 func (s *sim) wantTargets(want ...string) {

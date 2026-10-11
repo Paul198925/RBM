@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"rbm/internal/stats"
+	"hashsteer/internal/stats"
 )
 
 // A pool that switches coins makes the miner stand still while it rebuilds
@@ -41,7 +41,7 @@ func TestBenchmarkContinuesAfterARestart(t *testing.T) {
 	if !ok || st.Duration != 90*time.Second {
 		t.Fatalf("measured before the restart: %v (%v)", st.Duration, ok)
 	}
-	s.engine.stopAll()
+	s.engine.stopAll(s.now)
 
 	// a new engine on the same statistics
 	again := newSim(t, Options{}, map[string]float64{"kawpow": 1e-13})
@@ -50,7 +50,8 @@ func TestBenchmarkContinuesAfterARestart(t *testing.T) {
 	again.now, again.next = s.now, s.now
 	again.advance(time.Minute)
 	c := again.engine.Status().Groups[0].Candidates[0]
-	if c.Benchmarked || c.MeasuredSeconds != 90 || again.engine.Status().BenchmarkSeconds != 180 {
+	// stopping stored the half minute that had not been stored yet
+	if c.Benchmarked || c.MeasuredSeconds != 120 || again.engine.Status().BenchmarkSeconds != 180 {
 		t.Errorf("progress after the restart: %+v", c)
 	}
 

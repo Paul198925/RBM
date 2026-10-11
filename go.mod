@@ -1,4 +1,4 @@
-module rbm
+module hashsteer
 
 go 1.27.0
 

@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"rbm/internal/estimate"
+	"hashsteer/internal/estimate"
 )
 
 // Client talks to a share server.
@@ -39,7 +39,7 @@ func (c *Client) Estimates(ctx context.Context) ([]estimate.Entry, error) {
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "rbm")
+	req.Header.Set("User-Agent", "hashsteer")
 	resp, err := c.http().Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("shared hashrates: %w", err)
@@ -90,7 +90,7 @@ func (c *Client) Report(ctx context.Context, client string, entries []estimate.E
 	if err != nil {
 		return err
 	}
-	req.Header.Set("User-Agent", "rbm")
+	req.Header.Set("User-Agent", "hashsteer")
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := c.http().Do(req)
 	if err != nil {

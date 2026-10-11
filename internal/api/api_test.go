@@ -12,12 +12,12 @@ import (
 	"testing"
 	"time"
 
-	"rbm/internal/config"
-	"rbm/internal/device"
-	"rbm/internal/engine"
-	"rbm/internal/pool"
-	"rbm/internal/stats"
-	"rbm/internal/sysinfo"
+	"hashsteer/internal/config"
+	"hashsteer/internal/device"
+	"hashsteer/internal/engine"
+	"hashsteer/internal/pool"
+	"hashsteer/internal/stats"
+	"hashsteer/internal/sysinfo"
 )
 
 // fakeBackend records what the API asks of the application.
@@ -135,7 +135,7 @@ func (f *fakeBackend) RefreshShared(ctx context.Context) error {
 }
 
 func (f *fakeBackend) UpdateInfo() UpdateInfo {
-	return UpdateInfo{Current: "0.3.0", Latest: "0.4.0", Page: "https://github.com/Paul198925/RBM/releases/tag/v0.4.0",
+	return UpdateInfo{Current: "0.3.0", Latest: "0.4.0", Page: "https://github.com/Paul198925/hashsteer/releases/tag/v0.4.0",
 		Available: true, Restartable: true, Downloaded: f.updateInstalled}
 }
 
@@ -230,7 +230,7 @@ func do(b Backend, rq request) *httptest.ResponseRecorder {
 		r.Header.Set("Origin", rq.origin)
 	}
 	if rq.method != http.MethodGet && !rq.noHeader {
-		r.Header.Set("X-RBM-Request", "1")
+		r.Header.Set("X-Hashsteer-Request", "1")
 	}
 	if rq.password != "" {
 		r.SetBasicAuth("anyone", rq.password)
@@ -277,7 +277,7 @@ func TestReadEndpoints(t *testing.T) {
 		"/api/log":                        `12:00:00 started`,
 		"/api/minerlogs":                  `"name":"rigel-kawpow.log"`,
 		"/api/minerlogs/rigel-kawpow.log": `solution accepted`,
-		"/":                               `<title>rbm</title>`,
+		"/":                               `<title>hashsteer</title>`,
 		"/app.js":                         `refreshStatus`,
 		"/style.css":                      `--accent`,
 	} {
@@ -466,7 +466,7 @@ func TestSystemPauseBalancesActivity(t *testing.T) {
 		!strings.Contains(lines[1], ",60.0,RTX3060,ccminer-tpfuemp,rinhash,zpool,RIN,false,switched,1200000.00,2.04e-05,0.1930,410,1") {
 		t.Errorf("csv %d: %q", w.Code, lines)
 	}
-	if !strings.Contains(w.Header().Get("Content-Disposition"), "rbm-activity.csv") {
+	if !strings.Contains(w.Header().Get("Content-Disposition"), "hashsteer-activity.csv") {
 		t.Errorf("csv headers: %v", w.Header())
 	}
 }

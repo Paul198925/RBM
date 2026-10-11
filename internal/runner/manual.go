@@ -11,13 +11,13 @@ import (
 	"strings"
 	"time"
 
-	"rbm/internal/algo"
-	"rbm/internal/config"
-	"rbm/internal/device"
-	"rbm/internal/miner"
-	"rbm/internal/pool"
-	"rbm/internal/proc"
-	"rbm/internal/stats"
+	"hashsteer/internal/algo"
+	"hashsteer/internal/config"
+	"hashsteer/internal/device"
+	"hashsteer/internal/miner"
+	"hashsteer/internal/pool"
+	"hashsteer/internal/proc"
+	"hashsteer/internal/stats"
 )
 
 const (
@@ -281,7 +281,7 @@ func checkPayoutCurrency(ctx context.Context, zpool *pool.Zpool, logf func(strin
 	}
 	currency, ok := pool.FindPayoutCurrency(currencies, zpool.Currency)
 	if !ok {
-		return fmt.Errorf("zpool does not pay out in %s, run \"rbm currencies\" for the list", zpool.Currency)
+		return fmt.Errorf("zpool does not pay out in %s, run \"hashsteer currencies\" for the list", zpool.Currency)
 	}
 	logf("payout in %s (%s)", currency.Symbol, currency.Name)
 	if currency.MinimumPayout > 0 {

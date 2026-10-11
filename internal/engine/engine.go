@@ -14,13 +14,13 @@ import (
 	"time"
 	"unicode"
 
-	"rbm/internal/device"
-	"rbm/internal/estimate"
-	"rbm/internal/miner"
-	"rbm/internal/pool"
-	"rbm/internal/selector"
-	"rbm/internal/stats"
-	"rbm/internal/sysinfo"
+	"hashsteer/internal/device"
+	"hashsteer/internal/estimate"
+	"hashsteer/internal/miner"
+	"hashsteer/internal/pool"
+	"hashsteer/internal/selector"
+	"hashsteer/internal/stats"
+	"hashsteer/internal/sysinfo"
 )
 
 const (
@@ -314,7 +314,7 @@ func (g *group) deviceIndexes() []int {
 
 // Run mines until ctx is cancelled, then stops all miners.
 func (e *Engine) Run(ctx context.Context) error {
-	defer e.stopAll()
+	defer func() { e.stopAll(time.Now()) }()
 	if _, err := e.deps.Store.PruneSamples(time.Now().Add(-sampleRetention)); err != nil {
 		return err
 	}
@@ -987,8 +987,8 @@ func (e *Engine) stop(g *group, end string, now time.Time) {
 	}
 }
 
-func (e *Engine) stopAll() {
-	now := time.Now()
+// stopAll stops every miner, as of now.
+func (e *Engine) stopAll(now time.Time) {
 	// what the last minutes delivered still counts
 	if err := e.store(now); err != nil {
 		e.deps.Logf("storing the last measurements: %v", err)

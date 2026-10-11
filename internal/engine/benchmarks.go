@@ -4,10 +4,10 @@ import (
 	"sort"
 	"time"
 
-	"rbm/internal/device"
-	"rbm/internal/estimate"
-	"rbm/internal/miner"
-	"rbm/internal/stats"
+	"hashsteer/internal/device"
+	"hashsteer/internal/estimate"
+	"hashsteer/internal/miner"
+	"hashsteer/internal/stats"
 )
 
 // The states a benchmark can be in.

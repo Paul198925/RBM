@@ -1,4 +1,4 @@
-// Command rbm mines with the most profitable combination of miner program,
+// Command hashsteer mines with the most profitable combination of miner program,
 // algorithm, coin and pool.
 package main
 
@@ -13,14 +13,14 @@ import (
 	"syscall"
 	"text/tabwriter"
 
-	"rbm/internal/config"
-	"rbm/internal/device"
-	"rbm/internal/pool"
-	"rbm/internal/rates"
-	"rbm/internal/runner"
+	"hashsteer/internal/config"
+	"hashsteer/internal/device"
+	"hashsteer/internal/pool"
+	"hashsteer/internal/rates"
+	"hashsteer/internal/runner"
 )
 
-const usage = `usage: rbm [-config dir] <command> [options]
+const usage = `usage: hashsteer [-config dir] <command> [options]
 
 commands:
   run         mine with all devices on what pays best, until Ctrl+C:
@@ -51,7 +51,7 @@ func main() {
 		if errors.Is(err, runner.ErrRestart) {
 			os.Exit(runner.RestartCode)
 		}
-		fmt.Fprintln(os.Stderr, "rbm:", err)
+		fmt.Fprintln(os.Stderr, "hashsteer:", err)
 		os.Exit(1)
 	}
 }

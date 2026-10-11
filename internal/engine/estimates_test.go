@@ -4,9 +4,9 @@ import (
 	"testing"
 	"time"
 
-	"rbm/internal/device"
-	"rbm/internal/estimate"
-	"rbm/internal/miner"
+	"hashsteer/internal/device"
+	"hashsteer/internal/estimate"
+	"hashsteer/internal/miner"
 )
 
 func estimates(t *testing.T, text string) *estimate.Table {

@@ -6,11 +6,11 @@ import (
 	"strings"
 	"time"
 
-	"rbm/internal/api"
-	"rbm/internal/config"
-	"rbm/internal/engine"
-	"rbm/internal/estimate"
-	"rbm/internal/share"
+	"hashsteer/internal/api"
+	"hashsteer/internal/config"
+	"hashsteer/internal/engine"
+	"hashsteer/internal/estimate"
+	"hashsteer/internal/share"
 )
 
 const (

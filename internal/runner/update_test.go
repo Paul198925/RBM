@@ -13,11 +13,12 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
 
-	"rbm/internal/update"
+	"hashsteer/internal/update"
 )
 
 // toServer sends every request to a test server, whatever host it names: the
@@ -35,18 +36,18 @@ func (t toServer) RoundTrip(r *http.Request) (*http.Response, error) {
 func releaseOf(t *testing.T, version, program string) *update.Checker {
 	t.Helper()
 	var archive bytes.Buffer
-	name := "rbm-v" + version + "-" + runtime.GOOS + "-" + runtime.GOARCH
+	name := "hashsteer-v" + version + "-" + runtime.GOOS + "-" + runtime.GOARCH
 	if runtime.GOOS == "windows" {
 		name += ".zip"
 		w := zip.NewWriter(&archive)
-		f, _ := w.Create("rbm.exe")
+		f, _ := w.Create("hashsteer.exe")
 		f.Write([]byte(program))
 		w.Close()
 	} else {
 		name += ".tar.gz"
 		gz := gzip.NewWriter(&archive)
 		w := tar.NewWriter(gz)
-		w.WriteHeader(&tar.Header{Name: "rbm", Mode: 0o755, Size: int64(len(program)), Typeflag: tar.TypeReg})
+		w.WriteHeader(&tar.Header{Name: "hashsteer", Mode: 0o755, Size: int64(len(program)), Typeflag: tar.TypeReg})
 		w.Write([]byte(program))
 		w.Close()
 		gz.Close()
@@ -54,7 +55,7 @@ func releaseOf(t *testing.T, version, program string) *update.Checker {
 	sum := sha256.Sum256(archive.Bytes())
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/releases") {
-			json.NewEncoder(w).Encode([]map[string]any{{"tag_name": "v" + version, "html_url": "https://github.com/Paul198925/RBM/releases/tag/v" + version,
+			json.NewEncoder(w).Encode([]map[string]any{{"tag_name": "v" + version, "html_url": "https://github.com/Paul198925/hashsteer/releases/tag/v" + version,
 				"assets": []any{map[string]any{"name": name, "browser_download_url": "https://github.com/files/" + name, "digest": "sha256:" + hex.EncodeToString(sum[:])}}}})
 			return
 		}
@@ -89,7 +90,7 @@ func TestUpdateIsFoundFetchedAndWaits(t *testing.T) {
 	if !info.Available || info.Latest != "99.0.0" || info.Checked == nil || !strings.Contains(info.Page, "v99.0.0") {
 		t.Fatalf("info = %+v", info)
 	}
-	waitFor(t, "the news in the log", func() bool { return strings.Contains(out.String(), "rbm 99.0.0 is available") })
+	waitFor(t, "the news in the log", func() bool { return strings.Contains(out.String(), "hashsteer 99.0.0 is available") })
 
 	// not started by a start script: the new program waits for the next start
 	t.Setenv(RestartEnv, "")
@@ -123,6 +124,30 @@ func TestUpdateIsFoundFetchedAndWaits(t *testing.T) {
 	case <-app.restart:
 	default:
 		t.Error("no restart")
+	}
+}
+
+func TestNewProgramIsNamedAfterTheRunningOne(t *testing.T) {
+	for exe, want := range map[string]string{
+		filepath.Join("opt", "hashsteer", "hashsteer"): filepath.Join("opt", "hashsteer", "hashsteer.new"),
+		filepath.Join("mining", "hashsteer.exe"):       filepath.Join("mining", "hashsteer.new.exe"),
+		// an installation from before the program was renamed
+		filepath.Join("mining", "rbm.exe"): filepath.Join("mining", "rbm.new.exe"),
+		filepath.Join("opt", "rbm", "rbm"): filepath.Join("opt", "rbm", "rbm.new"),
+	} {
+		if got := newProgramName(exe); got != want {
+			t.Errorf("newProgramName(%q) = %q, want %q", exe, got, want)
+		}
+	}
+	// the old start scripts say so under the old name
+	t.Setenv(RestartEnv, "")
+	t.Setenv(legacyRestartEnv, "1")
+	if !restartable() {
+		t.Error("not restartable under an old start script")
+	}
+	t.Setenv(legacyRestartEnv, "")
+	if restartable() {
+		t.Error("restartable without a start script")
 	}
 }
 

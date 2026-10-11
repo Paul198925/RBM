@@ -283,7 +283,7 @@ var (
 func Default() *Config {
 	return &Config{
 		General: General{
-			Worker:  "rbm",
+			Worker:  "hashsteer",
 			DataDir: "data",
 			Power:   Power{Currency: "EUR"},
 			Switching: Switching{

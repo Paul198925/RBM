@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"rbm/internal/config"
-	"rbm/internal/engine"
-	"rbm/internal/pool"
+	"hashsteer/internal/config"
+	"hashsteer/internal/engine"
+	"hashsteer/internal/pool"
 )
 
 // demoBackend shows the interface with a bit of everything: a mining group,
@@ -61,7 +61,7 @@ func (d demoBackend) Status() engine.Status {
 func (d demoBackend) System() System {
 	s := d.fakeBackend.System()
 	s.Started = time.Now().Add(-27*time.Hour - 44*time.Minute)
-	s.Notices = []string{"No NVIDIA driver was found (the program nvidia-smi is missing), so no graphics card can mine. Install the driver from https://www.nvidia.com/drivers and start rbm again."}
+	s.Notices = []string{"No NVIDIA driver was found (the program nvidia-smi is missing), so no graphics card can mine. Install the driver from https://www.nvidia.com/drivers and start hashsteer again."}
 	return s
 }
 
@@ -82,11 +82,11 @@ func (d demoBackend) Offers() []pool.Offer {
 // TestDemoServer serves the interface with made-up data, to look at it in a
 // browser without mining:
 //
-//	RBM_UI_DEMO=127.0.0.1:4011 go test ./internal/api -run TestDemoServer -timeout 0
+//	HASHSTEER_UI_DEMO=127.0.0.1:4011 go test ./internal/api -run TestDemoServer -timeout 0
 func TestDemoServer(t *testing.T) {
-	addr := os.Getenv("RBM_UI_DEMO")
+	addr := os.Getenv("HASHSTEER_UI_DEMO")
 	if addr == "" {
-		t.Skip("set RBM_UI_DEMO to an address to serve the interface with made-up data")
+		t.Skip("set HASHSTEER_UI_DEMO to an address to serve the interface with made-up data")
 	}
 	backend := newBackend()
 	backend.cfg.Pools.Wallets = config.Wallets{"RVN": "RDemoAddress1", "ERG": "9demoAddress"}

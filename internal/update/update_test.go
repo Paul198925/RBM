@@ -99,29 +99,29 @@ func asset(base, name string, data []byte) map[string]any {
 }
 
 func TestLatestAndDownload(t *testing.T) {
-	win := zipWith(t, map[string]string{"rbm-v0.3.0-windows-amd64/rbm.exe": "new windows program", "rbm-v0.3.0-windows-amd64/start.bat": "@echo off"})
-	lin := tarGzWith(t, map[string]string{"rbm-v0.3.0-linux-amd64/rbm": "new linux program", "rbm-v0.3.0-linux-amd64/start.sh": "#!/bin/sh"})
-	old := zipWith(t, map[string]string{"rbm.exe": "old program"})
-	files := map[string][]byte{"rbm-v0.3.0-windows-amd64.zip": win, "rbm-v0.3.0-linux-amd64.tar.gz": lin, "rbm-v0.2.1-windows-amd64.zip": old}
+	win := zipWith(t, map[string]string{"hashsteer-v0.3.0-windows-amd64/hashsteer.exe": "new windows program", "hashsteer-v0.3.0-windows-amd64/start.bat": "@echo off"})
+	lin := tarGzWith(t, map[string]string{"hashsteer-v0.3.0-linux-amd64/hashsteer": "new linux program", "hashsteer-v0.3.0-linux-amd64/start.sh": "#!/bin/sh"})
+	old := zipWith(t, map[string]string{"hashsteer.exe": "old program"})
+	files := map[string][]byte{"hashsteer-v0.3.0-windows-amd64.zip": win, "hashsteer-v0.3.0-linux-amd64.tar.gz": lin, "hashsteer-v0.2.1-windows-amd64.zip": old}
 	c := releaseServer(t, files, func(base string) []map[string]any {
 		return []map[string]any{
-			{"tag_name": "v0.2.1", "html_url": "https://example/v0.2.1", "assets": []any{asset(base, "rbm-v0.2.1-windows-amd64.zip", old)}},
+			{"tag_name": "v0.2.1", "html_url": "https://example/v0.2.1", "assets": []any{asset(base, "hashsteer-v0.2.1-windows-amd64.zip", old)}},
 			{"tag_name": "v0.3.0", "html_url": "https://example/v0.3.0", "assets": []any{
-				asset(base, "rbm-v0.3.0-linux-amd64.tar.gz", lin), asset(base, "rbm-v0.3.0-windows-amd64.zip", win)}},
+				asset(base, "hashsteer-v0.3.0-linux-amd64.tar.gz", lin), asset(base, "hashsteer-v0.3.0-windows-amd64.zip", win)}},
 			// not for anyone yet, no number, nothing for this system, no checksum
-			{"tag_name": "v9.0.0", "draft": true, "assets": []any{asset(base, "rbm-v9.0.0-windows-amd64.zip", win)}},
-			{"tag_name": "nightly", "assets": []any{asset(base, "rbm-nightly-windows-amd64.zip", win)}},
-			{"tag_name": "v0.4.0", "assets": []any{asset(base, "rbm-v0.4.0-darwin-arm64.zip", win)}},
-			{"tag_name": "v0.5.0", "assets": []any{map[string]any{"name": "rbm-v0.5.0-windows-amd64.zip", "browser_download_url": base + "/x"}}},
+			{"tag_name": "v9.0.0", "draft": true, "assets": []any{asset(base, "hashsteer-v9.0.0-windows-amd64.zip", win)}},
+			{"tag_name": "nightly", "assets": []any{asset(base, "hashsteer-nightly-windows-amd64.zip", win)}},
+			{"tag_name": "v0.4.0", "assets": []any{asset(base, "hashsteer-v0.4.0-darwin-arm64.zip", win)}},
+			{"tag_name": "v0.5.0", "assets": []any{map[string]any{"name": "hashsteer-v0.5.0-windows-amd64.zip", "browser_download_url": base + "/x"}}},
 		}
 	})
 	ctx := context.Background()
 
 	release, ok, err := c.Latest(ctx)
-	if err != nil || !ok || release.Version != "0.3.0" || release.Page != "https://example/v0.3.0" || release.name != "rbm-v0.3.0-windows-amd64.zip" {
+	if err != nil || !ok || release.Version != "0.3.0" || release.Page != "https://example/v0.3.0" || release.name != "hashsteer-v0.3.0-windows-amd64.zip" {
 		t.Fatalf("latest = %+v, %v, %v", release, ok, err)
 	}
-	target := filepath.Join(t.TempDir(), "rbm.new.exe")
+	target := filepath.Join(t.TempDir(), "hashsteer.new.exe")
 	os.WriteFile(target, []byte("left over"), 0o644)
 	if err := c.Download(ctx, release, target); err != nil {
 		t.Fatal(err)
@@ -133,10 +133,10 @@ func TestLatestAndDownload(t *testing.T) {
 	// the same for Linux, from a tar.gz
 	c.GOOS = "linux"
 	release, ok, err = c.Latest(ctx)
-	if err != nil || !ok || release.name != "rbm-v0.3.0-linux-amd64.tar.gz" {
+	if err != nil || !ok || release.name != "hashsteer-v0.3.0-linux-amd64.tar.gz" {
 		t.Fatalf("latest for linux = %+v, %v, %v", release, ok, err)
 	}
-	target = filepath.Join(t.TempDir(), "rbm.new")
+	target = filepath.Join(t.TempDir(), "hashsteer.new")
 	if err := c.Download(ctx, release, target); err != nil {
 		t.Fatal(err)
 	}
@@ -152,14 +152,14 @@ func TestLatestAndDownload(t *testing.T) {
 }
 
 func TestDownloadRefuses(t *testing.T) {
-	good := zipWith(t, map[string]string{"rbm.exe": "program"})
+	good := zipWith(t, map[string]string{"hashsteer.exe": "program"})
 	empty := zipWith(t, map[string]string{"readme.txt": "no program here"})
 	files := map[string][]byte{"good.zip": good, "empty.zip": empty, "swapped.zip": []byte("something else")}
 	c := releaseServer(t, files, func(string) []map[string]any { return nil })
 	base := strings.TrimSuffix(c.API, "/releases")
 	ctx := context.Background()
 	dir := t.TempDir()
-	target := filepath.Join(dir, "rbm.new.exe")
+	target := filepath.Join(dir, "hashsteer.new.exe")
 	sum := strings.TrimPrefix(digest(good), "sha256:")
 
 	for name, r := range map[string]Release{

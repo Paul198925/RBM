@@ -36,7 +36,7 @@ args:
   - "0"
   - --api
   - "{api_port}"
-  # no restart on its own and no power efficiency calculator: rbm does both
+  # no restart on its own and no power efficiency calculator: hashsteer does both
   - --watchdog
   - "0"
   - --pec

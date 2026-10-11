@@ -17,7 +17,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"rbm/internal/algo"
+	"hashsteer/internal/algo"
 )
 
 //go:embed definitions/*.yaml

@@ -3,41 +3,41 @@ rem Starts mining with all devices on what pays best. Stop with Ctrl+C.
 rem Watch and configure it in the web interface: http://127.0.0.1:4000/
 cd /d "%~dp0"
 
-rem tells rbm that it is started again when it ends to finish an update
-set RBM_RESTART=1
+rem tells hashsteer that it is started again when it ends to finish an update
+set HASHSTEER_RESTART=1
 
 :run
 rem a newer build waits next to the running program until the next start
-if exist rbm.new.exe move /y rbm.new.exe rbm.exe >nul
+if exist hashsteer.new.exe move /y hashsteer.new.exe hashsteer.exe >nul
 
-if not exist rbm.exe call :build
-if not exist rbm.exe (
+if not exist hashsteer.exe call :build
+if not exist hashsteer.exe (
     pause
     exit /b 1
 )
 
 rem by its full path: Windows can be set not to look in the current folder
-"%~dp0rbm.exe" run
-rem 75 is rbm asking to be started again, with the update it has fetched
+"%~dp0hashsteer.exe" run
+rem 75 is hashsteer asking to be started again, with the update it has fetched
 if errorlevel 75 if not errorlevel 76 goto run
 echo.
-echo rbm has stopped.
+echo hashsteer has stopped.
 pause
 exit /b 0
 
-rem Builds rbm.exe from the source code next to this file, if that is there.
+rem Builds hashsteer.exe from the source code next to this file, if that is there.
 rem Go is needed for it; if it is missing, the user is asked before it is
 rem installed.
 :build
-if not exist cmd\rbm\main.go (
-    echo rbm.exe not found, and neither is its source code.
-    echo Get the program from https://github.com/Paul198925/RBM/releases
+if not exist cmd\hashsteer\main.go (
+    echo hashsteer.exe not found, and neither is its source code.
+    echo Get the program from https://github.com/Paul198925/hashsteer/releases
     exit /b 1
 )
 call :findgo
 if not errorlevel 1 goto compile
 
-echo rbm.exe not found, and Go is not installed to build it.
+echo hashsteer.exe not found, and Go is not installed to build it.
 where winget >nul 2>nul
 if errorlevel 1 goto nogo
 choice /c YN /n /m "Install Go now with winget? Windows may ask for administrator rights. [Y/N] "
@@ -56,19 +56,19 @@ exit /b 1
 
 :nogo
 echo Install Go from https://go.dev/dl/ or get the program from
-echo https://github.com/Paul198925/RBM/releases
+echo https://github.com/Paul198925/hashsteer/releases
 exit /b 1
 
 :compile
-echo rbm.exe not found. Building it, this takes a minute the first time ...
+echo hashsteer.exe not found. Building it, this takes a minute the first time ...
 set CGO_ENABLED=0
-"%GO%" build -o rbm.exe ./cmd/rbm
+"%GO%" build -o hashsteer.exe ./cmd/hashsteer
 if errorlevel 1 (
     echo The build failed.
-    if exist rbm.exe del rbm.exe
+    if exist hashsteer.exe del hashsteer.exe
     exit /b 1
 )
-echo Built rbm.exe.
+echo Built hashsteer.exe.
 exit /b 0
 
 rem Sets GO to the Go program: the one on the path, or the one in the folder

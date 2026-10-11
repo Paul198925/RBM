@@ -10,7 +10,11 @@
 /config.yaml.old
 
 # build output
-/rbm
-/rbm.new
+/hashsteer
+/hashsteer.new
 *.exe
 *.exe~
+
+# build output under the name the program had before
+/rbm
+/rbm.new

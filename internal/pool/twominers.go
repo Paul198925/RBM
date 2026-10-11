@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"rbm/internal/algo"
+	"hashsteer/internal/algo"
 )
 
 const twoMinersAPI = "https://%s.2miners.com/api"
@@ -99,7 +99,7 @@ func (t *TwoMiners) get(ctx context.Context, coin poolCoin, path string, v any) 
 	if err != nil {
 		return err
 	}
-	req.Header.Set("User-Agent", "rbm")
+	req.Header.Set("User-Agent", "hashsteer")
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("2miners %s: %w", coin.Symbol, err)

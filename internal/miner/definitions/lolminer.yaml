@@ -40,7 +40,7 @@ args:
   - "60"
   - --connectattempts
   - "3"
-  # leave a card that hangs to rbm: exit instead of restarting on its own
+  # leave a card that hangs to hashsteer: exit instead of restarting on its own
   - --watchdog
   - exit
 

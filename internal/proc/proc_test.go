@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-const helperEnv = "RBM_PROC_HELPER"
+const helperEnv = "HASHSTEER_PROC_HELPER"
 
 // TestMain doubles as the program under test: started with helperEnv set,
 // the test binary plays a miner instead of running the tests.

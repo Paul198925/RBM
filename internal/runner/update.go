@@ -5,11 +5,11 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"runtime"
+	"strings"
 	"time"
 
-	"rbm/internal/api"
-	"rbm/internal/update"
+	"hashsteer/internal/api"
+	"hashsteer/internal/update"
 )
 
 const (
@@ -21,9 +21,12 @@ const (
 
 // RestartEnv is set by the start scripts. It says that a program which
 // ends with RestartCode is started again, with a newer build swapped in.
+// legacyRestartEnv is what the start scripts set while the program was
+// still called rbm.
 const (
-	RestartEnv  = "RBM_RESTART"
-	RestartCode = 75
+	RestartEnv       = "HASHSTEER_RESTART"
+	legacyRestartEnv = "RBM_RESTART"
+	RestartCode      = 75
 )
 
 // ErrRestart is what Run returns when the program is to be started again
@@ -44,20 +47,28 @@ type updateState struct {
 }
 
 // restartable reports whether ending the program gets it started again.
-func restartable() bool { return os.Getenv(RestartEnv) != "" }
+func restartable() bool { return os.Getenv(RestartEnv) != "" || os.Getenv(legacyRestartEnv) != "" }
 
 // newProgramPath is where a newer build waits for the next start: next to
-// the running program, where the start scripts look for it.
+// the running program and named after it, where the start script that
+// started this one looks for it. So an installation from the time the
+// program was called rbm goes on updating under that name.
 func newProgramPath() (string, error) {
 	exe, err := os.Executable()
 	if err != nil {
 		return "", err
 	}
-	name := "rbm.new"
-	if runtime.GOOS == "windows" {
-		name = "rbm.new.exe"
+	return newProgramName(exe), nil
+}
+
+// newProgramName turns ".../hashsteer.exe" into ".../hashsteer.new.exe" and
+// ".../hashsteer" into ".../hashsteer.new".
+func newProgramName(exe string) string {
+	dir, base := filepath.Dir(exe), filepath.Base(exe)
+	if name, isExe := strings.CutSuffix(base, ".exe"); isExe {
+		return filepath.Join(dir, name+".new.exe")
 	}
-	return filepath.Join(filepath.Dir(exe), name), nil
+	return filepath.Join(dir, base+".new")
 }
 
 // UpdateInfo says whether a newer release exists and what was done with it.
@@ -103,7 +114,7 @@ func (a *App) CheckUpdate(ctx context.Context) error {
 	a.update.latest, a.update.found, a.update.err = release, found, ""
 	if found && wasNew && update.Newer(Version, release.Version) {
 		// logf takes the lock itself
-		go a.logf("rbm %s is available (this is %s): %s", release.Version, Version, release.Page)
+		go a.logf("hashsteer %s is available (this is %s): %s", release.Version, Version, release.Page)
 	}
 	return nil
 }
@@ -145,10 +156,10 @@ func (a *App) InstallUpdate(ctx context.Context) error {
 	}
 
 	if !restartable() {
-		a.logf("rbm %s is fetched and checked. It takes over at the next start.", u.latest.Version)
+		a.logf("hashsteer %s is fetched and checked. It takes over at the next start.", u.latest.Version)
 		return nil
 	}
-	a.logf("rbm %s is fetched and checked. Restarting to let it take over.", u.latest.Version)
+	a.logf("hashsteer %s is fetched and checked. Restarting to let it take over.", u.latest.Version)
 	select {
 	case a.restart <- struct{}{}:
 	default:

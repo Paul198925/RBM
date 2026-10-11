@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"rbm/internal/miner"
+	"hashsteer/internal/miner"
 )
 
 // withCPU returns a sim whose CPU mines ghostrider with xmrig next to the GPU.

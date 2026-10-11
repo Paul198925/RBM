@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"rbm/internal/device"
-	"rbm/internal/miner"
-	"rbm/internal/stats"
-	"rbm/internal/sysinfo"
+	"hashsteer/internal/device"
+	"hashsteer/internal/miner"
+	"hashsteer/internal/stats"
+	"hashsteer/internal/sysinfo"
 )
 
 // twoPrices mines kawpow (needs 6144 MiB per card) and sha512256d (2048),
@@ -118,7 +118,7 @@ func TestActivityLog(t *testing.T) {
 func TestStopAllRecordsTheLastMinutes(t *testing.T) {
 	s := twoPrices(t, Options{})
 	s.advance(4*time.Minute + 30*time.Second)
-	s.engine.stopAll()
+	s.engine.stopAll(s.now)
 	runs := s.runs()
 	if len(runs) != 1 || runs[0].End != stats.EndStopped || runs[0].EarnedBTC <= 0 {
 		t.Errorf("runs = %+v", runs)

@@ -102,7 +102,7 @@ func (c *CoinGecko) fetch(ctx context.Context, ids string) (map[string]float64, 
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "rbm")
+	req.Header.Set("User-Agent", "hashsteer")
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("coin prices: %w", err)

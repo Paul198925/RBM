@@ -36,7 +36,7 @@ func (c *Coinbase) BTCPrice(ctx context.Context, currency string) (float64, erro
 	if err != nil {
 		return 0, err
 	}
-	req.Header.Set("User-Agent", "rbm")
+	req.Header.Set("User-Agent", "hashsteer")
 	resp, err := client.Do(req)
 	if err != nil {
 		return 0, fmt.Errorf("exchange rate: %w", err)

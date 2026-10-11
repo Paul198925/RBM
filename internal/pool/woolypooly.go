@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"rbm/internal/algo"
+	"hashsteer/internal/algo"
 )
 
 const (
@@ -84,7 +84,7 @@ func (w *WoolyPooly) get(ctx context.Context, path string, v any) error {
 	if err != nil {
 		return err
 	}
-	req.Header.Set("User-Agent", "rbm")
+	req.Header.Set("User-Agent", "hashsteer")
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("woolypooly: %w", err)

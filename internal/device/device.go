@@ -55,7 +55,7 @@ func DetectAll(ctx context.Context) ([]Device, string) {
 	switch {
 	case errors.Is(err, exec.ErrNotFound):
 		problem = "No NVIDIA driver was found (the program nvidia-smi is missing), so no graphics card can mine. " +
-			"Install the driver from https://www.nvidia.com/drivers and start rbm again."
+			"Install the driver from https://www.nvidia.com/drivers and start hashsteer again."
 	case err != nil:
 		devices = nil
 		problem = "The NVIDIA driver does not answer (" + err.Error() + "), so no graphics card can mine. " +

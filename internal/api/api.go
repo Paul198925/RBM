@@ -17,12 +17,12 @@ import (
 	"strconv"
 	"time"
 
-	"rbm/internal/config"
-	"rbm/internal/device"
-	"rbm/internal/engine"
-	"rbm/internal/pool"
-	"rbm/internal/stats"
-	"rbm/internal/sysinfo"
+	"hashsteer/internal/config"
+	"hashsteer/internal/device"
+	"hashsteer/internal/engine"
+	"hashsteer/internal/pool"
+	"hashsteer/internal/stats"
+	"hashsteer/internal/sysinfo"
 )
 
 //go:embed web
@@ -394,7 +394,7 @@ func Handler(b Backend) http.Handler {
 			return
 		}
 		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-		w.Header().Set("Content-Disposition", `attachment; filename="rbm-activity.csv"`)
+		w.Header().Set("Content-Disposition", `attachment; filename="hashsteer-activity.csv"`)
 		out := csv.NewWriter(w)
 		out.Write([]string{"started", "ended", "minutes", "group", "miner", "algorithm", "pool", "coin", "benchmark", "end",
 			"hashrate", "earned_btc", "energy_kwh", "accepted", "rejected"})
@@ -489,19 +489,19 @@ func guard(b Backend, next http.Handler) http.Handler {
 		if password != "" {
 			_, given, ok := r.BasicAuth()
 			if !ok || subtle.ConstantTimeCompare([]byte(given), []byte(password)) != 1 {
-				w.Header().Set("WWW-Authenticate", `Basic realm="rbm", charset="UTF-8"`)
+				w.Header().Set("WWW-Authenticate", `Basic realm="hashsteer", charset="UTF-8"`)
 				writeError(w, http.StatusUnauthorized, "password required")
 				return
 			}
 		} else if !local(r) {
 			writeError(w, http.StatusForbidden,
-				"without a password the interface only works on the machine rbm runs on; set api.password to use it from elsewhere")
+				"without a password the interface only works on the machine hashsteer runs on; set api.password to use it from elsewhere")
 			return
 		}
 
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
-			if r.Header.Get("X-RBM-Request") == "" {
-				writeError(w, http.StatusForbidden, "changes need the X-RBM-Request header")
+			if r.Header.Get("X-Hashsteer-Request") == "" {
+				writeError(w, http.StatusForbidden, "changes need the X-Hashsteer-Request header")
 				return
 			}
 			if origin := r.Header.Get("Origin"); origin != "" {

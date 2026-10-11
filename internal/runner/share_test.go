@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"rbm/internal/estimate"
-	"rbm/internal/share"
-	"rbm/internal/stats"
+	"hashsteer/internal/estimate"
+	"hashsteer/internal/share"
+	"hashsteer/internal/stats"
 )
 
 func TestHashratesAreExchangedOnlyAsAsked(t *testing.T) {
