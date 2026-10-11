@@ -113,6 +113,7 @@ func TestLoadDirRejects(t *testing.T) {
 		"bad duration":    {FileGeneral, "switching: {interval: soon}\n"},
 		"short benchmark": {FileGeneral, "switching: {benchmark_time: 10s}\n"},
 		"negative watts":  {FileGeneral, "cpu: {watts: -1}\n"},
+		"negative memory": {FileGeneral, "memory: {min_free_ram_gb: -1}" + nl},
 		"no port":         {FileGeneral, "api: {listen: localhost}\n"},
 		"bad region":      {FilePools, "zpool: {region: mars}\n"},
 		"bad currency":    {FilePools, "zpool: {currency: \"BTC,c=X\"}\n"},
@@ -127,6 +128,19 @@ func TestLoadDirRejects(t *testing.T) {
 		if _, err := LoadDir(dir(t, map[string]string{c[0]: c[1]})); err == nil {
 			t.Errorf("%s: no error", name)
 		}
+	}
+}
+
+const nl = string(rune(10))
+
+func TestMemoryDefaults(t *testing.T) {
+	cfg := Default()
+	if cfg.General.Memory != (Memory{MinFreeRAMGB: 2, ReservedVRAMGB: 0.5}) {
+		t.Errorf("defaults = %+v", cfg.General.Memory)
+	}
+	cfg, err := LoadDir(dir(t, map[string]string{FileGeneral: "memory: {min_free_ram_gb: 4, reserved_vram_gb: 0}" + nl}))
+	if err != nil || cfg.General.Memory != (Memory{MinFreeRAMGB: 4}) {
+		t.Errorf("memory = %+v, %v", cfg.General.Memory, err)
 	}
 }
 

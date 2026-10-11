@@ -42,7 +42,19 @@ type General struct {
 	Power     Power     `yaml:"power" json:"power"`
 	Switching Switching `yaml:"switching" json:"switching"`
 	CPU       CPU       `yaml:"cpu" json:"cpu"`
+	Memory    Memory    `yaml:"memory" json:"memory"`
 	API       API       `yaml:"api" json:"api"`
+}
+
+// Memory keeps miners from taking the machine's last memory. A miner whose
+// algorithm needs more than what is left after these reserves is not started.
+type Memory struct {
+	// MinFreeRAMGB of main memory (RAM and page file together) stays free
+	// for everything else.
+	MinFreeRAMGB float64 `yaml:"min_free_ram_gb" json:"min_free_ram_gb"`
+	// ReservedVRAMGB of every graphics card's memory stays free, e.g. for
+	// the desktop it draws.
+	ReservedVRAMGB float64 `yaml:"reserved_vram_gb" json:"reserved_vram_gb"`
 }
 
 // Power describes what electricity costs. With a price of 0 it is not
@@ -172,7 +184,8 @@ func Default() *Config {
 				MinRunTime:        Duration(5 * time.Minute),
 				BenchmarkTime:     Duration(3 * time.Minute),
 			},
-			API: API{Listen: "127.0.0.1:4000"},
+			Memory: Memory{MinFreeRAMGB: 2, ReservedVRAMGB: 0.5},
+			API:    API{Listen: "127.0.0.1:4000"},
 		},
 		Pools: Pools{Zpool: Zpool{
 			Enabled:       true,
@@ -220,6 +233,9 @@ func (c *Config) Validate() error {
 
 	if g.CPU.Watts < 0 || g.CPU.Threads < 0 {
 		return errors.New("cpu.watts and cpu.threads must not be negative")
+	}
+	if g.Memory.MinFreeRAMGB < 0 || g.Memory.ReservedVRAMGB < 0 {
+		return errors.New("memory.min_free_ram_gb and memory.reserved_vram_gb must not be negative")
 	}
 	g.API.Listen = strings.TrimSpace(g.API.Listen)
 	if g.API.Listen != "" {
