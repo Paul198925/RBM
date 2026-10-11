@@ -1,0 +1,9 @@
+{
+  "LTC": {"algo": "scrypt", "name": "Litecoin", "conversion_disabled": 0, "minimum_payout": 0.05, "error": ""},
+  "DOGE": {"algo": "scrypt", "name": "Doge", "conversion_disabled": 0, "minimum_payout": 5, "error": "We are short of this currency. Please switch to another currency."},
+  "RVN": {"algo": "kawpow", "name": "Raven", "conversion_disabled": 0, "minimum_payout": 0.05, "error": ""},
+  "0DYNC": {"algo": "argon2d1000", "name": "0 DynCash", "conversion_disabled": 1, "minimum_payout": 0.05, "error": ""},
+  "DGB-sha256": {"algo": "sha256", "name": "Digibyte", "conversion_disabled": 0, "minimum_payout": 0.5, "symbol": "DGB", "error": ""},
+  "DGB-scrypt": {"algo": "scrypt", "name": "Digibyte", "conversion_disabled": "0", "minimum_payout": 0.5, "symbol": "DGB", "error": ""},
+  "ARG-argon2": {"algo": "argon2d4096", "name": "Argentum", "conversion_disabled": 1, "minimum_payout": 0.05, "symbol": "ARG", "error": ""}
+}

@@ -1,0 +1,6 @@
+{
+  "kawpow": {"name": "kawpow", "port": 1325, "ssl_port": 51325, "coins": 7, "fees": 1, "hashrate": 4228081484, "workers": 91, "estimate_current": "0.00013124", "estimate_last24h": "0.00010723", "actual_last24h": "0.10357", "mbtc_mh_factor": 1000, "hashrate_last24h": 2759042263.5938, "hashtap_enabled": "0"},
+  "sha512256d": {"name": "sha512256d", "port": 3342, "ssl_port": 53342, "coins": 1, "fees": 1, "hashrate": 878643051402, "workers": 8, "estimate_current": "0.00000838", "estimate_last24h": "0.00000831", "actual_last24h": "0.00519", "mbtc_mh_factor": 1000000, "hashrate_last24h": 810810120359.7708, "hashtap_enabled": "0"},
+  "ghostrider": {"name": "ghostrider", "port": 5354, "ssl_port": 55354, "coins": 15, "fees": 1, "hashrate": 76484, "workers": 7209, "estimate_current": "0.00000055", "estimate_last24h": "0.00000059", "actual_last24h": "0.00061", "mbtc_mh_factor": 0.001, "hashrate_last24h": 110699.0833, "hashtap_enabled": "0"},
+  "nofactor": {"name": "nofactor", "port": 1234, "fees": 1, "hashrate": 0, "workers": 0, "estimate_current": "0.1", "estimate_last24h": "0.1", "actual_last24h": "0.1", "mbtc_mh_factor": 0}
+}
