@@ -8,6 +8,25 @@ if [ -f rbm.new ]; then
     mv -f rbm.new rbm
 fi
 
+# go_install_hint prints how Go is installed on this system. It is not done
+# from here: that needs root, and which Go to take is the user's choice.
+go_install_hint() {
+    if command -v apt-get >/dev/null 2>&1; then
+        echo "  sudo apt-get install golang-go"
+    elif command -v dnf >/dev/null 2>&1; then
+        echo "  sudo dnf install golang"
+    elif command -v pacman >/dev/null 2>&1; then
+        echo "  sudo pacman -S go"
+    elif command -v zypper >/dev/null 2>&1; then
+        echo "  sudo zypper install go"
+    else
+        echo "  see https://go.dev/doc/install"
+        return
+    fi
+    echo "A Go from 1.21 on is enough: it fetches the version rbm needs by itself."
+    echo "Older ones are too old; take Go from https://go.dev/dl/ then."
+}
+
 # build the program from the source code next to this file, if that and Go
 # are there
 if [ ! -f rbm ]; then
@@ -17,9 +36,12 @@ if [ ! -f rbm ]; then
         exit 1
     fi
     if ! command -v go >/dev/null 2>&1; then
-        echo "rbm not found, and Go is not installed to build it." >&2
-        echo "Install Go from https://go.dev/dl/ or get the program from" >&2
-        echo "https://github.com/Paul198925/RBM/releases" >&2
+        {
+            echo "rbm not found, and Go is not installed to build it. Install Go with:"
+            go_install_hint
+            echo "and start this again, or get the program from"
+            echo "https://github.com/Paul198925/RBM/releases"
+        } >&2
         exit 1
     fi
     echo "rbm not found. Building it, this takes a minute the first time ..."

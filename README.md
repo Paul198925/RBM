@@ -81,6 +81,8 @@ sudo sh linux/install-service.sh
 
 The NVIDIA driver, with `nvidia-smi` working. `rbm devices` lists what is found. AMD and Intel cards are not supported.
 
+rbm says so at the start and in the web interface if the driver is missing. A miner program that cannot start because something is missing on the system, such as the Visual C++ runtime on Windows or a library on Linux, fails its benchmark; the reason and what to install are shown with it on the Benchmarks and Watchdog pages. rbm installs nothing on the system by itself.
+
 ## Use
 
 ```
@@ -93,7 +95,7 @@ rbm [-config dir] <command>
   mine        run one miner on one algorithm, for testing
 ```
 
-`start.bat` and `start.sh` run `rbm run`. In a checkout of this repository they build the program first if it is not there yet and Go is installed.
+`start.bat` and `start.sh` run `rbm run`. In a checkout of this repository they build the program first if it is not there yet. If Go is missing for that, `start.bat` asks whether to install it with winget, and `start.sh` says how to install it.
 
 ### Configuration
 

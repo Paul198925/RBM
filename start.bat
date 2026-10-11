@@ -19,24 +19,41 @@ echo rbm has stopped.
 pause
 exit /b 0
 
-rem Builds rbm.exe from the source code next to this file, if that and Go
-rem are there.
+rem Builds rbm.exe from the source code next to this file, if that is there.
+rem Go is needed for it; if it is missing, the user is asked before it is
+rem installed.
 :build
 if not exist cmd\rbm\main.go (
     echo rbm.exe not found, and neither is its source code.
     echo Get the program from https://github.com/Paul198925/RBM/releases
     exit /b 1
 )
-set "GO=go"
-where go >nul 2>nul
-if errorlevel 1 set "GO=%ProgramFiles%\Go\bin\go.exe"
-"%GO%" version >nul 2>nul
+call :findgo
+if not errorlevel 1 goto compile
+
+echo rbm.exe not found, and Go is not installed to build it.
+where winget >nul 2>nul
+if errorlevel 1 goto nogo
+choice /c YN /n /m "Install Go now with winget? Windows may ask for administrator rights. [Y/N] "
+rem 1 is yes; no, Ctrl+C and a missing keyboard are everything else
+if errorlevel 2 goto nogo
+if not errorlevel 1 goto nogo
+winget install --id GoLang.Go --exact --source winget
 if errorlevel 1 (
-    echo rbm.exe not found, and Go is not installed to build it.
-    echo Install Go from https://go.dev/dl/ or get the program from
-    echo https://github.com/Paul198925/RBM/releases
-    exit /b 1
+    echo Go could not be installed.
+    goto nogo
 )
+call :findgo
+if not errorlevel 1 goto compile
+echo Go is installed, but this window does not see it yet. Start this file again.
+exit /b 1
+
+:nogo
+echo Install Go from https://go.dev/dl/ or get the program from
+echo https://github.com/Paul198925/RBM/releases
+exit /b 1
+
+:compile
 echo rbm.exe not found. Building it, this takes a minute the first time ...
 set CGO_ENABLED=0
 "%GO%" build -o rbm.exe ./cmd/rbm
@@ -47,3 +64,14 @@ if errorlevel 1 (
 )
 echo Built rbm.exe.
 exit /b 0
+
+rem Sets GO to the Go program: the one on the path, or the one in the folder
+rem its installer uses, which a window opened before the installation does
+rem not have on its path. Fails if there is none.
+:findgo
+set "GO=go"
+where go >nul 2>nul
+if not errorlevel 1 exit /b 0
+set "GO=%ProgramFiles%\Go\bin\go.exe"
+if exist "%GO%" exit /b 0
+exit /b 1
