@@ -103,3 +103,32 @@ algorithms:
   - name: yespowerltncg
   - name: yespowermgpc
   - name: yespowersmt
+  # Algorithms that other miner programs mine too. Whichever is fastest on
+  # a card is used; the memory figures are those of the other programs.
+  - name: anime
+  - name: bmw512
+  - name: curve
+    miner_name: curvehash
+  - name: equihash144
+    min_memory_mib: 2048
+  - name: evrprogpow
+    min_memory_mib: 6144
+  - name: firopow
+    min_memory_mib: 6144
+  - name: ghostrider
+  - name: heavyhash
+  - name: kawpow
+    min_memory_mib: 6144
+  - name: lyra2z330
+  - name: meowpow
+    min_memory_mib: 6144
+  - name: meraki
+    min_memory_mib: 6144
+  - name: power2b
+  - name: sha512256d
+  - name: skein2
+  - name: skydoge
+  - name: yescryptr32
+  - name: yespowersugar
+  - name: yespowertide
+  - name: yespowerurx

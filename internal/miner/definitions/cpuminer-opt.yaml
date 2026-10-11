@@ -68,3 +68,15 @@ algorithms:
   - name: yespowermgpc
     miner_name: yespower
     args: ["--param-n", "2048", "--param-r", "32", "--param-key", "Magpies are birds of the Corvidae family."]
+  - name: power2b
+    miner_name: yespower-b2b
+    args: ["--param-n", "2048", "--param-r", "32", "--param-key", "Now I am become Death, the destroyer of worlds"]
+  - name: yespowersugar
+    miner_name: yespower
+    args: ["--param-n", "2048", "--param-r", "32", "--param-key", "Satoshi Nakamoto 31/Oct/2008 Proof-of-work is essentially one-CPU-one-vote"]
+  - name: yespowertide
+    miner_name: yespower
+    args: ["--param-n", "2048", "--param-r", "8"]
+  - name: yespowerurx
+    miner_name: yespower
+    args: ["--param-n", "2048", "--param-r", "32", "--param-key", "UraniumX"]

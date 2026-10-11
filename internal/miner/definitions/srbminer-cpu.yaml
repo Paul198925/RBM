@@ -66,3 +66,7 @@ algorithms:
     miner_name: argon2d_16000
   - name: yespoweradvc
   - name: yespowermgpc
+  - name: argon2d500
+    miner_name: argon2d_dynamic
+  - name: yespowereqpay
+    fee: 2.0

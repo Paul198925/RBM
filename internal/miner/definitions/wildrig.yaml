@@ -81,3 +81,5 @@ algorithms:
   - name: nexapow
     fee: 0.75
     min_memory_mib: 3072
+  - name: ghostrider
+    fee: 1.0

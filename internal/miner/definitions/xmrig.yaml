@@ -44,3 +44,4 @@ scheme_tls: stratum+ssl
 algorithms:
   - name: ghostrider
     miner_name: gr
+  - name: flex
