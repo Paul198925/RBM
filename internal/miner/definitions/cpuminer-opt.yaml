@@ -1,0 +1,52 @@
+# cpuminer-opt by JayDDee, an open-source CPU miner for many algorithms.
+# https://github.com/JayDDee/cpuminer-opt
+#
+# Windows only: the project publishes no Linux build. The archive holds one
+# program per instruction set; the AVX2 one runs on about every CPU built
+# since 2014. The checksum is the one GitHub publishes for the release file.
+name: cpuminer-opt
+version: "26.1"
+api: ccminer
+vendor: CPU
+fee: 0
+
+downloads:
+  windows:
+    url: https://github.com/JayDDee/cpuminer-opt/releases/download/v26.1/cpuminer-opt-26.1-windows.zip
+    sha256: caf59deb12831e40475c5245a76bf42f9ba2ff620065be5386b80ec55c998e9c
+    executable: cpuminer-avx2.exe
+
+args:
+  - -a
+  - "{algo}"
+  - -o
+  - "{scheme}://{host}:{port}"
+  - -u
+  - "{user}"
+  - -p
+  - "{pass}"
+  # address of the API
+  - -b
+  - "127.0.0.1:{api_port}"
+  - -q
+
+# added when the number of threads is limited in the configuration
+threads_args:
+  - -t
+  - "{threads}"
+
+scheme: stratum+tcp
+scheme_tls: stratum+ssl
+
+# A selection of what zpool.ca offers for CPUs: the algorithms that need no
+# further parameters.
+algorithms:
+  - name: lyra2z330
+  - name: m7m
+  - name: minotaurx
+  - name: yescrypt
+  - name: yescryptr8
+  - name: yescryptr16
+  - name: yescryptr32
+  - name: yespower
+  - name: yespowerr16

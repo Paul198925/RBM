@@ -29,11 +29,11 @@ func TestAllBuiltinDefinitionsAreComplete(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := Names(defs); !reflect.DeepEqual(got, []string{"ccminer-tpfuemp", "gminer", "lolminer", "rigel", "srbminer", "srbminer-cpu", "wildrig", "xmrig"}) {
+	if got := Names(defs); !reflect.DeepEqual(got, []string{"bzminer", "ccminer-tpfuemp", "cpuminer-opt", "gminer", "lolminer", "rigel", "srbminer", "srbminer-cpu", "wildrig", "xmrig"}) {
 		t.Errorf("definitions = %v", got)
 	}
 	// miners that do not exist for every system, on purpose
-	windowsOnly := map[string]bool{"gminer": true}
+	windowsOnly := map[string]bool{"gminer": true, "cpuminer-opt": true}
 	for name, def := range defs {
 		for _, goos := range []string{"windows", "linux"} {
 			if _, ok := def.Downloads[goos]; !ok && !(goos == "linux" && windowsOnly[name]) {
@@ -46,7 +46,7 @@ func TestAllBuiltinDefinitionsAreComplete(t *testing.T) {
 		// every algorithm must give a full command line, with and without TLS
 		for _, a := range def.Algorithms {
 			for _, tls := range []bool{false, true} {
-				args, err := def.BuildArgs(Job{Algorithm: a, DeviceIndexes: []int{0}, APIPort: 4000,
+				args, err := def.BuildArgs(Job{Algorithm: a, DeviceIndexes: []int{0}, DevicePCI: []string{"01:00"}, APIPort: 4000,
 					Host: "pool.example", Port: 3333, TLS: tls, User: "wallet", Pass: "x", Threads: 4})
 				if err != nil {
 					t.Errorf("%s/%s: %v", name, a.Name, err)

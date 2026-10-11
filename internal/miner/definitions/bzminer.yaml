@@ -1,0 +1,77 @@
+# BzMiner, a closed-source miner for GPUs and CPUs, used here for NVIDIA
+# cards. https://github.com/bzminer/bzminer
+#
+# The checksums are the ones GitHub publishes for the release files. The
+# command line follows BzMiner's documentation and RainbowMiner's use of it.
+name: bzminer
+version: "100.45"
+api: bzminer
+vendor: NVIDIA
+fee: 1.0
+
+downloads:
+  windows:
+    url: https://github.com/bzminer/bzminer/releases/download/v100.45/bzminer_v100.45_windows.zip
+    sha256: f925f0fb03b1244ea0182296acba8dd7fef9aee655483a08ecc3f6a948abfc91
+    executable: bzminer.exe
+  linux:
+    url: https://github.com/bzminer/bzminer/releases/download/v100.45/bzminer_v100.45_linux.tar.gz
+    sha256: e52cceefb78b88dd57197dd833c17424fa40644b7d49b4c194f74efeb3d5054c
+    executable: bzminer
+
+args:
+  - -a
+  - "{algo}"
+  # NVIDIA cards only, and of those the ones named by their PCI address:
+  # BzMiner's own numbers count every device it finds, the CPU included
+  - --nvidia
+  - "1"
+  - --amd
+  - "0"
+  - --intel
+  - "0"
+  - --cpu
+  - "0"
+  - --devices
+  - "{pci_devices}"
+  - -p
+  - "{scheme}://{host}:{port}"
+  - -u
+  - "{user}"
+  - --pass
+  - "{pass}"
+  # a configuration file of its own per run, so that none left behind is read
+  - --config
+  - "config_{api_port}.txt"
+  - --http_address
+  - 127.0.0.1
+  - --http_port
+  - "{api_port}"
+  - --no-watchdog
+  - --output
+  - log
+  - --no-color
+  # do not announce the rig on the network
+  - --disable_udp
+
+scheme: stratum+tcp
+scheme_tls: stratum+ssl
+# Ethash and Etchash pools that speak the older "ethproxy" dialect
+eth_modes:
+  ethproxy:
+    scheme: ethproxy+tcp
+    scheme_tls: ethproxy+ssl
+
+algorithms:
+  # the memory figures follow the size of the coins' data in October 2026
+  - name: autolykos2
+    miner_name: ergo
+    min_memory_mib: 7400
+  - name: etchash
+    fee: 0.5
+    min_memory_mib: 5120
+  - name: ethash
+    fee: 0.5
+    min_memory_mib: 7680
+  - name: kawpow
+    min_memory_mib: 6144
