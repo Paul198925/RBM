@@ -1,15 +1,14 @@
 // Command rbm mines with the most profitable combination of miner program,
-// algorithm and pool.
+// algorithm, coin and pool.
 package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
-	"io/fs"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"text/tabwriter"
 
@@ -19,19 +18,28 @@ import (
 	"rbm/internal/runner"
 )
 
-const usage = `usage: rbm [-config file] <command> [options]
+const usage = `usage: rbm [-config dir] <command> [options]
 
 commands:
+  run         mine with all devices on what pays best, until Ctrl+C:
+              benchmarks first, then switches as the prices move.
+              Everything can be watched and configured in the web
+              interface, by default at http://127.0.0.1:4000/
   devices     list the GPUs and the CPU found on this machine
-  pools       list what zpool.ca currently pays per algorithm
+  pools       list what zpool.ca currently pays, per algorithm and per coin
   currencies  list the coins zpool.ca can pay the earnings out in
-  run         mine with all GPUs on what pays best, until Ctrl+C:
-              benchmarks first, then switches as the prices move
   mine        run one miner on one algorithm until Ctrl+C, for testing
                 -miner name   miner program (default rigel)
                 -algo name    algorithm (default kawpow)
                 -tls          connect to the pool with TLS
+
+The configuration is a directory of YAML files (default: config). It is
+created with defaults on the first run.
 `
+
+// legacyConfig is the single file the first versions read. It is looked for
+// next to the configuration directory.
+const legacyConfig = "config.yaml"
 
 func main() {
 	if err := run(); err != nil {
@@ -41,7 +49,7 @@ func main() {
 }
 
 func run() error {
-	configPath := flag.String("config", "config.yaml", "configuration file")
+	configDir := flag.String("config", "config", "configuration directory")
 	flag.Usage = func() { fmt.Fprint(os.Stderr, usage) }
 	flag.Parse()
 	if flag.NArg() == 0 {
@@ -57,23 +65,26 @@ func run() error {
 	case "devices":
 		return listDevices(ctx)
 	case "pools":
-		cfg, err := loadConfig(*configPath, false)
+		cfg, err := loadConfig(*configDir)
 		if err != nil {
 			return err
 		}
 		return listPools(ctx, cfg)
 	case "currencies":
-		cfg, err := loadConfig(*configPath, false)
+		cfg, err := loadConfig(*configDir)
 		if err != nil {
 			return err
 		}
 		return listCurrencies(ctx, cfg)
 	case "run":
-		cfg, err := loadConfig(*configPath, true)
+		if err := prepareConfig(*configDir); err != nil {
+			return err
+		}
+		app, err := runner.NewApp(ctx, *configDir, os.Stdout)
 		if err != nil {
 			return err
 		}
-		return runner.Auto(ctx, cfg, os.Stdout)
+		return app.Run(ctx)
 	case "mine":
 		flags := flag.NewFlagSet("mine", flag.ExitOnError)
 		opts := runner.ManualOptions{}
@@ -81,7 +92,7 @@ func run() error {
 		flags.StringVar(&opts.Algorithm, "algo", "kawpow", "algorithm")
 		flags.BoolVar(&opts.TLS, "tls", false, "connect to the pool with TLS")
 		flags.Parse(args)
-		cfg, err := loadConfig(*configPath, true)
+		cfg, err := loadConfig(*configDir)
 		if err != nil {
 			return err
 		}
@@ -91,17 +102,33 @@ func run() error {
 	return fmt.Errorf("unknown command %q", command)
 }
 
-// loadConfig reads the configuration file. Commands that only look around
-// work without one.
-func loadConfig(path string, required bool) (*config.Config, error) {
-	cfg, err := config.Load(path)
-	if errors.Is(err, fs.ErrNotExist) {
-		if required {
-			return nil, fmt.Errorf("%s not found: copy config.example.yaml and fill in your wallet", path)
-		}
-		return config.Default(), nil
+// prepareConfig makes sure the configuration directory exists: converted
+// from the single file of the first versions, or written with the defaults.
+func prepareConfig(dir string) error {
+	legacy := filepath.Join(filepath.Dir(filepath.Clean(dir)), legacyConfig)
+	migrated, err := config.MigrateLegacy(legacy, dir)
+	if err != nil {
+		return err
 	}
-	return cfg, err
+	if migrated {
+		fmt.Printf("configuration moved from %s into the directory %s (old file kept as %s.old)\n", legacy, dir, legacy)
+		return nil
+	}
+	if !config.Exists(dir) {
+		if err := config.SaveDir(dir, config.Default()); err != nil {
+			return err
+		}
+		fmt.Printf("wrote a default configuration to the directory %s\n", dir)
+	}
+	return nil
+}
+
+// loadConfig makes sure there is a configuration and reads it.
+func loadConfig(dir string) (*config.Config, error) {
+	if err := prepareConfig(dir); err != nil {
+		return nil, err
+	}
+	return config.LoadDir(dir)
 }
 
 func listDevices(ctx context.Context) error {
@@ -124,11 +151,16 @@ func listDevices(ctx context.Context) error {
 }
 
 func zpoolFor(cfg *config.Config) *pool.Zpool {
+	z := cfg.Pools.Zpool
 	return &pool.Zpool{
-		Wallet:   cfg.Zpool.Wallet,
-		Currency: cfg.Zpool.Currency,
-		Worker:   cfg.Worker,
-		Region:   cfg.Zpool.Region,
+		Wallet:        z.Wallet,
+		Currency:      z.Currency,
+		Worker:        cfg.General.Worker,
+		Region:        z.Region,
+		AlgoSwitching: z.AlgoSwitching,
+		CoinMining:    z.CoinMining,
+		Coins:         z.Coins,
+		ExcludeCoins:  z.ExcludeCoins,
 	}
 }
 
@@ -141,7 +173,7 @@ func listCurrencies(ctx context.Context, cfg *config.Config) error {
 	fmt.Fprintln(w, "SYMBOL\tNAME\tMIN PAYOUT\tNOTICE")
 	for _, c := range currencies {
 		symbol := c.Symbol
-		if symbol == cfg.Zpool.Currency {
+		if symbol == cfg.Pools.Zpool.Currency {
 			symbol += " *"
 		}
 		// the pool does not publish a minimum for every coin
@@ -164,11 +196,14 @@ func listPools(ctx context.Context, cfg *config.Config) error {
 		return err
 	}
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', tabwriter.AlignRight)
-	fmt.Fprintln(w, "ALGORITHM\tBTC/GH/DAY\t24H\tPAID 24H\tFEE\tPOOL HASHRATE\tWORKERS\t")
+	fmt.Fprintln(w, "ALGORITHM\tCOIN\tBTC/GH/DAY\tPOOL HASHRATE\tWORKERS\tFEE\t")
 	for _, o := range offers {
-		fmt.Fprintf(w, "%s\t%.8f\t%.8f\t%.8f\t%.1f%%\t%s\t%d\t\n",
-			o.Algorithm, o.Price*1e9, o.Price24h*1e9, o.Actual24h*1e9,
-			o.FeePercent, runner.FormatHashrate(o.Hashrate), o.Workers)
+		coin := o.Coin
+		if coin == "" {
+			coin = "(pool picks)"
+		}
+		fmt.Fprintf(w, "%s\t%s\t%.8f\t%s\t%d\t%.1f%%\t\n",
+			o.Algorithm, coin, o.Price*1e9, runner.FormatHashrate(o.Hashrate), o.Workers, o.FeePercent)
 	}
 	return w.Flush()
 }

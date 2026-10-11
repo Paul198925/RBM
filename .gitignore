@@ -5,7 +5,9 @@
 /data/
 
 # local configuration with wallet addresses
+/config/
 /config.yaml
+/config.yaml.old
 
 # build output
 /rbm

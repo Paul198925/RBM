@@ -43,7 +43,7 @@ type ManualOptions struct {
 // Mine runs one miner on one algorithm at zpool until ctx is cancelled or
 // the miner exits, and records what it measures.
 func Mine(ctx context.Context, cfg *config.Config, opts ManualOptions, out io.Writer) error {
-	if err := cfg.ValidateMining(); err != nil {
+	if err := cfg.ReadyToMine(); err != nil {
 		return err
 	}
 	logf := func(format string, args ...any) {
@@ -81,10 +81,12 @@ func Mine(ctx context.Context, cfg *config.Config, opts ManualOptions, out io.Wr
 	}
 
 	zpool := &pool.Zpool{
-		Wallet:   cfg.Zpool.Wallet,
-		Currency: cfg.Zpool.Currency,
-		Worker:   cfg.Worker,
-		Region:   cfg.Zpool.Region,
+		Wallet:   cfg.Pools.Zpool.Wallet,
+		Currency: cfg.Pools.Zpool.Currency,
+		Worker:   cfg.General.Worker,
+		Region:   cfg.Pools.Zpool.Region,
+		// by hand, the pool's own port for the algorithm is what is meant
+		AlgoSwitching: true,
 	}
 	if err := checkPayoutCurrency(ctx, zpool, logf); err != nil {
 		return err
@@ -101,7 +103,7 @@ func Mine(ctx context.Context, cfg *config.Config, opts ManualOptions, out io.Wr
 		port = offer.TLSPort
 	}
 
-	store, err := stats.Open(filepath.Join(cfg.DataDir, "stats.db"))
+	store, err := stats.Open(filepath.Join(cfg.General.DataDir, "stats.db"))
 	if err != nil {
 		return err
 	}
@@ -123,7 +125,7 @@ func Mine(ctx context.Context, cfg *config.Config, opts ManualOptions, out io.Wr
 		logf("stored hashrate for %s: %s", hashKey, FormatHashrate(hashStat.Average(stats.Week)))
 	}
 
-	binDir := filepath.Join(cfg.DataDir, "bin")
+	binDir := filepath.Join(cfg.General.DataDir, "bin")
 	if _, ok := def.Installed(binDir); !ok {
 		logf("downloading %s %s ...", def.Name, def.Version)
 	}
@@ -150,7 +152,7 @@ func Mine(ctx context.Context, cfg *config.Config, opts ManualOptions, out io.Wr
 		return err
 	}
 
-	logPath := filepath.Join(cfg.DataDir, "logs",
+	logPath := filepath.Join(cfg.General.DataDir, "logs",
 		fmt.Sprintf("%s-%s-%s.log", def.Name, algoName, time.Now().Format("20060102-150405")))
 	process, err := proc.Start(proc.Spec{Path: exe, Args: args, LogPath: logPath, LowPriority: true})
 	if err != nil {

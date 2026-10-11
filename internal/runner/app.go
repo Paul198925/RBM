@@ -1,0 +1,452 @@
+package runner
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"regexp"
+	"slices"
+	"sort"
+	"sync"
+	"time"
+
+	"rbm/internal/api"
+	"rbm/internal/config"
+	"rbm/internal/device"
+	"rbm/internal/engine"
+	"rbm/internal/miner"
+	"rbm/internal/pool"
+	"rbm/internal/rates"
+	"rbm/internal/stats"
+)
+
+// Version is shown in the interface.
+const Version = "0.1"
+
+const (
+	logLines        = 1000
+	minerLogTail    = 64 << 10
+	minerLogsListed = 60
+	currencyMaxAge  = 10 * time.Minute
+)
+
+// App is the running application: it holds the configuration, runs the
+// engine with it, starts the engine anew when the configuration changes, and
+// answers the web interface.
+type App struct {
+	configDir   string
+	out         io.Writer
+	devices     []device.Device
+	definitions map[string]*miner.Definition
+	reload      chan struct{}
+
+	mu           sync.Mutex
+	cfg          *config.Config
+	engine       *engine.Engine
+	waiting      string
+	log          []string
+	currencies   []pool.PayoutCurrency
+	currenciesAt time.Time
+}
+
+// NewApp loads the configuration from dir and looks at the hardware.
+func NewApp(ctx context.Context, configDir string, out io.Writer) (*App, error) {
+	cfg, err := config.LoadDir(configDir)
+	if err != nil {
+		return nil, err
+	}
+	devices, err := device.Detect(ctx)
+	if err != nil {
+		return nil, err
+	}
+	definitions, err := miner.Builtin()
+	if err != nil {
+		return nil, err
+	}
+	return &App{
+		configDir:   configDir,
+		out:         out,
+		devices:     devices,
+		definitions: definitions,
+		reload:      make(chan struct{}, 1),
+		cfg:         cfg,
+		waiting:     "starting",
+	}, nil
+}
+
+// logf writes a line to the console and keeps it for the interface.
+func (a *App) logf(format string, args ...any) {
+	line := time.Now().Format("15:04:05") + " " + fmt.Sprintf(format, args...)
+	fmt.Fprintln(a.out, line)
+	a.mu.Lock()
+	a.log = append(a.log, line)
+	if len(a.log) > logLines {
+		a.log = append(a.log[:0], a.log[len(a.log)-logLines:]...)
+	}
+	a.mu.Unlock()
+}
+
+// Run mines until ctx is cancelled. Whenever the configuration changes, the
+// engine is stopped and started again with the new one.
+func (a *App) Run(ctx context.Context) error {
+	if listen := a.Config().General.API.Listen; listen != "" {
+		server, err := api.Start(listen, api.Handler(a))
+		if err != nil {
+			return fmt.Errorf("web interface: %w", err)
+		}
+		defer server.Close()
+		a.logf("web interface: http://%s/", server.Addr())
+	}
+
+	for {
+		err := a.cycle(ctx)
+		if ctx.Err() != nil {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		a.logf("configuration changed, applying it")
+	}
+}
+
+// cycle runs the engine with the current configuration until that changes
+// or ctx is cancelled. Without a usable configuration it just waits.
+func (a *App) cycle(ctx context.Context) error {
+	cfg := a.Config()
+	e, cleanup, reason, err := a.build(ctx, &cfg)
+	if err != nil {
+		return err
+	}
+	if e == nil {
+		a.setEngine(nil, reason)
+		a.logf("not mining: %s", reason)
+		select {
+		case <-ctx.Done():
+		case <-a.reload:
+		}
+		return nil
+	}
+	defer cleanup()
+
+	a.setEngine(e, "")
+	engineCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- e.Run(engineCtx) }()
+
+	select {
+	case err := <-done:
+		a.setEngine(nil, "the engine stopped")
+		return err
+	case <-ctx.Done():
+	case <-a.reload:
+	}
+	cancel()
+	err = <-done
+	a.setEngine(nil, "restarting")
+	return err
+}
+
+// build makes an engine for cfg. A nil engine with a reason means the
+// configuration is not ready to mine yet; an error is something worse.
+func (a *App) build(ctx context.Context, cfg *config.Config) (e *engine.Engine, cleanup func(), reason string, err error) {
+	if err := cfg.ReadyToMine(); err != nil {
+		return nil, nil, err.Error(), nil
+	}
+	z := cfg.Pools.Zpool
+	zpool := &pool.Zpool{
+		Wallet:        z.Wallet,
+		Currency:      z.Currency,
+		Worker:        cfg.General.Worker,
+		Region:        z.Region,
+		AlgoSwitching: z.AlgoSwitching,
+		CoinMining:    z.CoinMining,
+		Coins:         z.Coins,
+		ExcludeCoins:  z.ExcludeCoins,
+	}
+	if err := checkPayoutCurrency(ctx, zpool, a.logf); err != nil {
+		if ctx.Err() != nil {
+			return nil, nil, "stopping", nil
+		}
+		return nil, nil, err.Error(), nil
+	}
+
+	var devices []device.Device
+	for _, d := range a.devices {
+		if !slices.Contains(cfg.Devices.Exclude, d.ID) {
+			devices = append(devices, d)
+		}
+	}
+
+	store, err := stats.Open(filepath.Join(cfg.General.DataDir, "stats.db"))
+	if err != nil {
+		return nil, nil, "", err
+	}
+	deps := engine.Deps{
+		Store:       store,
+		Sources:     []pool.Source{zpool},
+		Definitions: a.definitions,
+		Devices:     devices,
+		Launch:      engine.Launch,
+		Power:       device.GPUPower,
+		Logf:        a.logf,
+	}
+	power := cfg.General.Power
+	if power.PricePerKWh > 0 {
+		coinbase := &rates.Coinbase{}
+		deps.Rate = func(ctx context.Context) (float64, error) {
+			return coinbase.BTCPrice(ctx, power.Currency)
+		}
+		a.logf("electricity: %g %s per kWh", power.PricePerKWh, power.Currency)
+	} else {
+		a.logf("electricity is not counted (power.price_per_kwh is 0)")
+	}
+
+	miners := map[string]engine.MinerOptions{}
+	for name, m := range cfg.Miners {
+		miners[name] = engine.MinerOptions{Disabled: m.Disabled, ExcludeAlgorithms: m.ExcludeAlgorithms, ExtraArgs: m.ExtraArgs}
+	}
+	sw := cfg.General.Switching
+	e, err = engine.New(engine.Options{
+		Interval:          time.Duration(sw.Interval),
+		MinRunTime:        time.Duration(sw.MinRunTime),
+		BenchmarkTime:     time.Duration(sw.BenchmarkTime),
+		HysteresisPercent: sw.HysteresisPercent,
+		MineAtLoss:        sw.MineAtLoss,
+		PowerPricePerKWh:  power.PricePerKWh,
+		PowerCurrency:     power.Currency,
+		TLS:               z.TLS,
+		DataDir:           cfg.General.DataDir,
+		CPUEnabled:        cfg.General.CPU.Enabled,
+		CPUWatts:          cfg.General.CPU.Watts,
+		CPUThreads:        cfg.General.CPU.Threads,
+		Miners:            miners,
+		OnlyAlgorithms:    cfg.Algorithms.Only,
+		ExcludeAlgorithms: cfg.Algorithms.Exclude,
+	}, deps)
+	if err != nil {
+		store.Close()
+		// e.g. every device is excluded: a matter of configuration
+		return nil, nil, err.Error(), nil
+	}
+	return e, func() { store.Close() }, "", nil
+}
+
+func (a *App) setEngine(e *engine.Engine, waiting string) {
+	a.mu.Lock()
+	a.engine, a.waiting = e, waiting
+	a.mu.Unlock()
+}
+
+func (a *App) currentEngine() *engine.Engine {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.engine
+}
+
+// The methods below are api.Backend.
+
+func (a *App) Waiting() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.waiting
+}
+
+func (a *App) Status() engine.Status {
+	if e := a.currentEngine(); e != nil {
+		return e.Status()
+	}
+	return engine.Status{Time: time.Now()}
+}
+
+func (a *App) Devices() []device.Device { return a.devices }
+
+func (a *App) Offers() []pool.Offer {
+	if e := a.currentEngine(); e != nil {
+		return e.Offers()
+	}
+	return nil
+}
+
+// Config returns a copy of the configuration that the caller may change.
+func (a *App) Config() config.Config {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return cloneConfig(a.cfg)
+}
+
+func cloneConfig(c *config.Config) config.Config {
+	out := *c
+	out.Pools.Zpool.Coins = slices.Clone(c.Pools.Zpool.Coins)
+	out.Pools.Zpool.ExcludeCoins = slices.Clone(c.Pools.Zpool.ExcludeCoins)
+	out.Algorithms.Only = slices.Clone(c.Algorithms.Only)
+	out.Algorithms.Exclude = slices.Clone(c.Algorithms.Exclude)
+	out.Devices.Exclude = slices.Clone(c.Devices.Exclude)
+	out.Miners = make(config.Miners, len(c.Miners))
+	for name, m := range c.Miners {
+		m.ExcludeAlgorithms = slices.Clone(m.ExcludeAlgorithms)
+		m.ExtraArgs = slices.Clone(m.ExtraArgs)
+		out.Miners[name] = m
+	}
+	return out
+}
+
+// SaveConfig checks cfg, writes it to the configuration directory and makes
+// the engine start anew with it.
+func (a *App) SaveConfig(cfg config.Config) error {
+	for name := range cfg.Miners {
+		if _, ok := a.definitions[name]; !ok {
+			return fmt.Errorf("unknown miner %q", name)
+		}
+	}
+	for _, id := range cfg.Devices.Exclude {
+		if !slices.ContainsFunc(a.devices, func(d device.Device) bool { return d.ID == id }) {
+			return fmt.Errorf("unknown device %q", id)
+		}
+	}
+	if err := config.SaveDir(a.configDir, &cfg); err != nil {
+		return err
+	}
+	a.mu.Lock()
+	a.cfg = &cfg
+	a.mu.Unlock()
+	select {
+	case a.reload <- struct{}{}:
+	default:
+	}
+	return nil
+}
+
+func (a *App) Meta(ctx context.Context) api.Meta {
+	meta := api.Meta{
+		Version:    Version,
+		ConfigDir:  a.configDir,
+		Regions:    config.ZpoolRegions,
+		Currencies: a.payoutCurrencies(ctx),
+	}
+	if abs, err := filepath.Abs(a.configDir); err == nil {
+		meta.ConfigDir = abs
+	}
+	for _, name := range miner.Names(a.definitions) {
+		def := a.definitions[name]
+		info := api.MinerInfo{Name: def.Name, Version: def.Version, Vendor: def.Vendor, FeePercent: def.Fee}
+		for _, alg := range def.Algorithms {
+			info.Algorithms = append(info.Algorithms, alg.Name)
+		}
+		meta.Miners = append(meta.Miners, info)
+	}
+	return meta
+}
+
+// payoutCurrencies asks zpool what it pays out in, at most every few
+// minutes. Without an answer the list stays empty or old.
+func (a *App) payoutCurrencies(ctx context.Context) []pool.PayoutCurrency {
+	a.mu.Lock()
+	cached, at := a.currencies, a.currenciesAt
+	a.mu.Unlock()
+	if time.Since(at) < currencyMaxAge {
+		if cached == nil {
+			return []pool.PayoutCurrency{}
+		}
+		return cached
+	}
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	fresh, err := (&pool.Zpool{}).PayoutCurrencies(ctx)
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	// a failed try is not repeated at once either
+	a.currenciesAt = time.Now()
+	if err == nil {
+		a.currencies = fresh
+	}
+	if a.currencies == nil {
+		return []pool.PayoutCurrency{}
+	}
+	return a.currencies
+}
+
+func (a *App) ResetBenchmark(hashKey string) {
+	if e := a.currentEngine(); e != nil {
+		e.ResetBenchmark(hashKey)
+	}
+}
+
+func (a *App) Enable(hashKey string) {
+	if e := a.currentEngine(); e != nil {
+		e.Enable(hashKey)
+	}
+}
+
+func (a *App) Log() []string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return slices.Clone(a.log)
+}
+
+func (a *App) logDir() string {
+	cfg := a.Config()
+	return filepath.Join(cfg.General.DataDir, "logs")
+}
+
+// MinerLogs lists the newest miner logs, newest first.
+func (a *App) MinerLogs() ([]api.LogFile, error) {
+	entries, err := os.ReadDir(a.logDir())
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var files []api.LogFile
+	for _, entry := range entries {
+		info, err := entry.Info()
+		if err != nil || !info.Mode().IsRegular() || filepath.Ext(entry.Name()) != ".log" {
+			continue
+		}
+		files = append(files, api.LogFile{Name: entry.Name(), Size: info.Size(), Modified: info.ModTime()})
+	}
+	sort.Slice(files, func(i, j int) bool { return files[i].Modified.After(files[j].Modified) })
+	if len(files) > minerLogsListed {
+		files = files[:minerLogsListed]
+	}
+	return files, nil
+}
+
+var (
+	logNameRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*\.log$`)
+	// colours and cursor movements a miner writes for a terminal
+	ansiRE = regexp.MustCompile("\x1b\\[[0-9;?]*[A-Za-z]")
+)
+
+// MinerLog returns the end of one miner log, without terminal control codes.
+// name must be a plain file name from MinerLogs.
+func (a *App) MinerLog(name string) (string, error) {
+	if !logNameRE.MatchString(name) {
+		return "", errors.New("not a log file name")
+	}
+	f, err := os.Open(filepath.Join(a.logDir(), name))
+	if err != nil {
+		return "", fs.ErrNotExist
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return "", err
+	}
+	if info.Size() > minerLogTail {
+		if _, err := f.Seek(-minerLogTail, io.SeekEnd); err != nil {
+			return "", err
+		}
+	}
+	data, err := io.ReadAll(io.LimitReader(f, minerLogTail))
+	if err != nil {
+		return "", err
+	}
+	return ansiRE.ReplaceAllString(string(data), ""), nil
+}

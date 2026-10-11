@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>rbm</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="brand">rbm <span id="version"></span></div>
+    <nav id="nav">
+      <a href="#/" data-page="dashboard">Dashboard</a>
+      <a href="#/miners" data-page="miners">Miners</a>
+      <a href="#/pools" data-page="pools">Pools</a>
+      <a href="#/config" data-page="config">Configuration</a>
+      <a href="#/logs" data-page="logs">Logs</a>
+    </nav>
+    <div class="conn" id="conn">connecting ...</div>
+  </aside>
+  <main>
+    <div id="banner" class="banner" hidden></div>
+    <div id="page"></div>
+  </main>
+  <div id="toast" class="toast" hidden></div>
+  <script src="app.js"></script>
+</body>
+</html>
