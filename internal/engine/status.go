@@ -12,9 +12,12 @@ type Status struct {
 	Time time.Time `json:"time"`
 	// BTCPrice is the price of one bitcoin in Currency, 0 if unknown or
 	// not needed.
-	BTCPrice float64       `json:"btc_price,omitempty"`
-	Currency string        `json:"currency,omitempty"`
-	Groups   []GroupStatus `json:"groups"`
+	BTCPrice float64 `json:"btc_price,omitempty"`
+	// BenchmarkSeconds is the measured mining time a hashrate needs
+	// before it is trusted.
+	BenchmarkSeconds float64       `json:"benchmark_seconds"`
+	Currency         string        `json:"currency,omitempty"`
+	Groups           []GroupStatus `json:"groups"`
 }
 
 // GroupStatus describes one device group.
@@ -51,13 +54,15 @@ type CandidateStatus struct {
 	ID string `json:"id"`
 	// HashKey names miner, algorithm and devices: what a benchmark and a
 	// failure belong to, whatever the pool or coin.
-	HashKey     string  `json:"hash_key"`
-	Miner       string  `json:"miner"`
-	Algorithm   string  `json:"algorithm"`
-	Pool        string  `json:"pool"`
-	Coin        string  `json:"coin,omitempty"`
-	Benchmarked bool    `json:"benchmarked"`
-	Hashrate    float64 `json:"hashrate"`
+	HashKey     string `json:"hash_key"`
+	Miner       string `json:"miner"`
+	Algorithm   string `json:"algorithm"`
+	Pool        string `json:"pool"`
+	Coin        string `json:"coin,omitempty"`
+	Benchmarked bool   `json:"benchmarked"`
+	// MeasuredSeconds is the mining time the hashrate rests on so far.
+	MeasuredSeconds float64 `json:"measured_seconds"`
+	Hashrate        float64 `json:"hashrate"`
 	// Price is in BTC per day for one hash per second.
 	Price      float64 `json:"price"`
 	FeePercent float64 `json:"fee_percent"`
@@ -83,7 +88,8 @@ func (e *Engine) Status() Status {
 
 // publish builds a fresh snapshot. Only the engine's own goroutine calls it.
 func (e *Engine) publish(now time.Time) {
-	status := Status{Time: now, BTCPrice: e.rate, Groups: make([]GroupStatus, 0, len(e.groups))}
+	status := Status{Time: now, BTCPrice: e.rate, BenchmarkSeconds: e.opts.BenchmarkTime.Seconds(),
+		Groups: make([]GroupStatus, 0, len(e.groups))}
 	if e.rate > 0 {
 		status.Currency = e.opts.PowerCurrency
 	}
@@ -114,17 +120,18 @@ func (e *Engine) publish(now time.Time) {
 		}
 		for _, o := range g.options {
 			cs := CandidateStatus{
-				ID:          o.ID,
-				HashKey:     o.hashKey,
-				Miner:       o.def.Name,
-				Algorithm:   o.algo.Name,
-				Pool:        o.offer.Pool,
-				Coin:        o.offer.Coin,
-				Benchmarked: o.Benchmarked,
-				Hashrate:    o.Hashrate,
-				Price:       o.Price,
-				FeePercent:  o.FeePercent,
-				Power:       o.PowerWatts,
+				ID:              o.ID,
+				HashKey:         o.hashKey,
+				Miner:           o.def.Name,
+				Algorithm:       o.algo.Name,
+				Pool:            o.offer.Pool,
+				Coin:            o.offer.Coin,
+				Benchmarked:     o.Benchmarked,
+				MeasuredSeconds: o.measured.Seconds(),
+				Hashrate:        o.Hashrate,
+				Price:           o.Price,
+				FeePercent:      o.FeePercent,
+				Power:           o.PowerWatts,
 			}
 			if o.Benchmarked {
 				cs.RevenueBTC = selector.Revenue(o.Candidate)

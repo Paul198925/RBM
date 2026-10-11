@@ -196,8 +196,10 @@ function renderMiners() {
           const running = c.id === g.running;
           const stateBadge = running ? h('span', { class: 'badge ' + g.state }, g.state)
             : c.benchmarked ? h('span', { class: 'badge' }, 'measured') : h('span', { class: 'badge todo' }, 'needs benchmark');
+          // a benchmark keeps what it has measured across restarts
+          const progress = c.benchmarked ? '' : '  ' + Math.round(c.measured_seconds) + ' of ' + Math.round(s.benchmark_seconds) + ' s';
           return h('tr', { class: running ? 'running' : '' },
-            h('td', {}, c.miner), h('td', {}, c.algorithm), h('td', {}, c.coin ? c.pool + ' : ' + c.coin : c.pool), h('td', {}, stateBadge),
+            h('td', {}, c.miner), h('td', {}, c.algorithm), h('td', {}, c.coin ? c.pool + ' : ' + c.coin : c.pool), h('td', {}, stateBadge, progress),
             h('td', { class: 'num' }, c.benchmarked ? fmtHash(c.hashrate) : '-'),
             h('td', { class: 'num' }, fmtWatts(c.power_watts)),
             h('td', { class: 'num' }, c.fee_percent + ' %'),

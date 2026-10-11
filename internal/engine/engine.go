@@ -145,6 +145,8 @@ type option struct {
 	selector.Candidate
 	hashKey  string
 	powerKey string
+	// measured is how much mining time the stored hashrate rests on
+	measured time.Duration
 	def      *miner.Definition
 	algo     miner.Algorithm
 	offer    pool.Offer
@@ -549,6 +551,9 @@ func (e *Engine) options(g *group, now time.Time) ([]option, error) {
 			if err != nil {
 				return nil, err
 			}
+			if ok {
+				base.measured = hashrate.Duration
+			}
 			if ok && hashrate.Duration >= e.opts.BenchmarkTime {
 				base.Hashrate = hashrate.Average(stats.Week)
 				base.Benchmarked = true
@@ -857,7 +862,14 @@ func (e *Engine) store(now time.Time) error {
 		if err != nil {
 			return err
 		}
-		outcome := st.Update(hashrate, span, now, hashrateTolerance)
+		// while the benchmark runs there is no trusted average yet to
+		// judge a sample by: every interval counts, also one in which the
+		// pool switched coins and the miner stood still for a while
+		tolerance := hashrateTolerance
+		if st.Duration < e.opts.BenchmarkTime {
+			tolerance = 0
+		}
+		outcome := st.Update(hashrate, span, now, tolerance)
 		if err := e.deps.Store.Save(r.hashKey, st); err != nil {
 			return err
 		}
@@ -899,7 +911,8 @@ func (e *Engine) report(g *group, decision selector.Decision, params selector.Pa
 		g.name, r.label(), formatHashrate(live.Hashrate), power,
 		live.Accepted, live.Rejected, live.Invalid)
 	if r.benchmark {
-		e.deps.Logf("%s  (benchmark)", line)
+		e.deps.Logf("%s  (benchmark, %v of %v measured)", line,
+			r.measured.Round(time.Second), e.opts.BenchmarkTime)
 		return
 	}
 	profit := selector.Profit(r.Candidate, params)
