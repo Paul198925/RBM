@@ -58,3 +58,48 @@ algorithms:
   - name: yespower
   - name: yespowerr16
   - name: yespowereqpay
+  # The rest of what zpool.ca offers and this program knows, by its own list
+  # of algorithms. For many of them (sha256, scrypt, x11, groestl, quark,
+  # qubit, skein, myrgr, ...) there are ASICs: a graphics card earns next to
+  # nothing there, and after the benchmark such an algorithm is simply never
+  # chosen. Uncheck them under Setup Miners to save the benchmarks.
+  - name: argon2d500
+  - name: argon2d1000
+  - name: argon2d4096
+  - name: argon2d16000
+  - name: balloon
+  - name: equihash
+  - name: equihash192
+    min_memory_mib: 4096
+  - name: groestl
+  - name: hmq1725
+  - name: lyra2v2
+  - name: myrgr
+    miner_name: myr-gr
+  - name: neoscrypt
+  - name: neoscryptxaya
+    miner_name: xaya
+  - name: odocrypt
+    miner_name: odo
+  - name: quark
+  - name: qubit
+  - name: scrypt
+  - name: sha256
+    miner_name: sha256d
+  - name: sha3256t
+    miner_name: sha3t
+  - name: skein
+  - name: soterg
+  - name: timetravel
+  - name: tribus
+  - name: whirlpool
+  - name: whirlpoolx2
+  - name: x11
+  - name: x13
+  - name: x16rv2
+  - name: x21s
+  - name: x25x
+  - name: yespoweradvc
+  - name: yespowerltncg
+  - name: yespowermgpc
+  - name: yespowersmt

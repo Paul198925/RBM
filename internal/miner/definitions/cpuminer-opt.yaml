@@ -50,3 +50,21 @@ algorithms:
   - name: yescryptr32
   - name: yespower
   - name: yespowerr16
+  # more of zpool.ca's algorithms that are mined with CPUs
+  - name: argon2d500
+  - name: argon2d1000
+  - name: argon2d4096
+  - name: argon2d16000
+  - name: hmq1725
+  - name: scryptn2
+  - name: timetravel
+  # yespower with the parameters of one coin each
+  - name: yespoweradvc
+    miner_name: yespower
+    args: ["--param-n", "2048", "--param-r", "32", "--param-key", "Let the quest begin"]
+  - name: yespowerltncg
+    miner_name: yespower
+    args: ["--param-n", "2048", "--param-r", "32", "--param-key", "LTNCGYES"]
+  - name: yespowermgpc
+    miner_name: yespower
+    args: ["--param-n", "2048", "--param-r", "32", "--param-key", "Magpies are birds of the Corvidae family."]

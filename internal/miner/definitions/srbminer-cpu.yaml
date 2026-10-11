@@ -62,3 +62,7 @@ algorithms:
   - name: yespowertide
   - name: yespowerurx
     fee: 0
+  - name: argon2d16000
+    miner_name: argon2d_16000
+  - name: yespoweradvc
+  - name: yespowermgpc
