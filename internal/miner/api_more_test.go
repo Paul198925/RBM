@@ -1,0 +1,154 @@
+package miner
+
+import (
+	"bufio"
+	"context"
+	"net"
+	"strings"
+	"testing"
+)
+
+// serveTCP plays a miner with a line based API: it answers one command per
+// connection and returns its port.
+func serveTCP(t *testing.T, answer func(command string) string) int {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { l.Close() })
+	go func() {
+		for {
+			conn, err := l.Accept()
+			if err != nil {
+				return
+			}
+			command, _ := bufio.NewReader(conn).ReadString('\n')
+			conn.Write([]byte(answer(strings.TrimSpace(command))))
+			conn.Close()
+		}
+	}()
+	return l.Addr().(*net.TCPAddr).Port
+}
+
+func TestCcminerPoll(t *testing.T) {
+	api, err := NewAPI("ccminer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := map[string]struct {
+		answer string
+		want   AlgoSample
+	}{
+		// the classic answer: kH/s only, closed without a line end
+		"khs": {"NAME=ccminer;VER=2026.09.2;API=1.9;ALGO=rinhash;GPUS=1;KHS=1234.56;SOLV=0;ACC=41;REJ=2;ACCMN=1.5;DIFF=0.5;UPTIME=600;TS=1791700000|",
+			AlgoSample{Hashrate: 1234560, Accepted: 41, Rejected: 2}},
+		// slow algorithms need the H/s field, kH/s rounds to nothing
+		"hs": {"NAME=ccminer;ALGO=yespower;KHS=0.00;HS=1290.5;ACC=3;REJ=0|\n",
+			AlgoSample{Hashrate: 1290.5, Accepted: 3}},
+		"starting": {"NAME=ccminer;ALGO=rinhash;KHS=0.00;ACC=0;REJ=0|", AlgoSample{}},
+	}
+	for name, c := range cases {
+		var got string
+		port := serveTCP(t, func(command string) string { got = command; return c.answer })
+		sample, err := api.Poll(context.Background(), port)
+		if err != nil {
+			t.Errorf("%s: %v", name, err)
+			continue
+		}
+		if got != "summary" {
+			t.Errorf("%s: miner was asked %q", name, got)
+		}
+		if sample.For("rinhash") != c.want {
+			t.Errorf("%s: sample = %+v, want %+v", name, sample.For("rinhash"), c.want)
+		}
+	}
+
+	// garbage and silence are errors, not a hashrate of zero
+	if _, err := api.Poll(context.Background(), serveTCP(t, func(string) string { return "HTTP/1.1 400 Bad Request\r\n" })); err == nil {
+		t.Error("no error for an answer that is not ccminer's")
+	}
+	if _, err := api.Poll(context.Background(), serveTCP(t, func(string) string { return "" })); err == nil {
+		t.Error("no error for an empty answer")
+	}
+	l, _ := net.Listen("tcp", "127.0.0.1:0")
+	port := l.Addr().(*net.TCPAddr).Port
+	l.Close()
+	if _, err := api.Poll(context.Background(), port); err == nil {
+		t.Error("no error from a miner that is not listening")
+	}
+}
+
+func TestSrbminerPoll(t *testing.T) {
+	api, err := NewAPI("srbminer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	status := func(miningTime string) string {
+		return `{"rig_name": "rig1", "mining_time": ` + miningTime + `,
+			"algorithms": [{"id": 0, "name": "firopow",
+				"hashrate": {"gpu": {"gpu0": 16400000, "gpu1": 16430000, "total": 32830000}, "cpu": {"total": 0}},
+				"shares": {"total": 22, "accepted": 21, "rejected": 1}}],
+			"gpu_devices": [{"device": "gpu0", "asic_power": 158}, {"device": "gpu1", "asic_power": 162}]}`
+	}
+	sample, err := api.Poll(context.Background(), serveMiner(t, "/", status("600")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := AlgoSample{Hashrate: 32830000, Accepted: 21, Rejected: 1}
+	if sample.For("firopow") != want || sample.PowerWatts != 320 {
+		t.Errorf("sample = %+v, power %v", sample.For("firopow"), sample.PowerWatts)
+	}
+
+	// what it reports while starting is not a mining speed
+	sample, err = api.Poll(context.Background(), serveMiner(t, "/", status("5")))
+	if err != nil || sample.For("firopow").Hashrate != 0 || sample.For("firopow").Accepted != 21 {
+		t.Errorf("starting miner: %+v, %v", sample, err)
+	}
+	// nor is a miner that has no algorithm yet a failure
+	if sample, err := api.Poll(context.Background(), serveMiner(t, "/", `{"mining_time": 0}`)); err != nil || sample.For("x").Hashrate != 0 {
+		t.Errorf("empty status: %+v, %v", sample, err)
+	}
+}
+
+func TestNewMinerDefinitions(t *testing.T) {
+	ccminer := builtin1(t, "ccminer-tpfuemp")
+	rinhash, ok := ccminer.Algorithm("rinhash")
+	if !ok || ccminer.FeePercent(rinhash) != 0 {
+		t.Fatalf("rinhash = %+v, %v", rinhash, ok)
+	}
+	args, err := ccminer.BuildArgs(Job{Algorithm: rinhash, DeviceIndexes: []int{1}, APIPort: 4300,
+		Host: "rinhash.eu.mine.zpool.ca", Port: 7148, User: "wallet1", Pass: "rig1,c=RVN,zap=RIN"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	line := strings.Join(args, " ")
+	for _, want := range []string{"-a rinhash", "-o stratum+tcp://rinhash.eu.mine.zpool.ca:7148", "-u wallet1", "-p rig1,c=RVN,zap=RIN", "-d 1", "-b 127.0.0.1:4300"} {
+		if !strings.Contains(line, want) {
+			t.Errorf("%q is missing in %q", want, line)
+		}
+	}
+	if verus, _ := ccminer.Algorithm("verushash"); verus.NameForMiner() != "verus" {
+		t.Errorf("verushash is called %q", verus.NameForMiner())
+	}
+
+	srbminer := builtin1(t, "srbminer")
+	sccpow, ok := srbminer.Algorithm("sccpow")
+	if !ok || srbminer.FeePercent(sccpow) != 0.85 {
+		t.Fatalf("sccpow = %+v, %v", sccpow, ok)
+	}
+	for tls, want := range map[bool]string{false: "--tls false", true: "--tls true"} {
+		args, err := srbminer.BuildArgs(Job{Algorithm: sccpow, DeviceIndexes: []int{0, 1}, APIPort: 4400,
+			Host: "sccpow.eu.mine.zpool.ca", Port: 1327, TLS: tls, User: "wallet1", Pass: "rig1,c=RVN"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		line := strings.Join(args, " ")
+		for _, want := range []string{"--algorithm firopow", "--pool sccpow.eu.mine.zpool.ca:1327", "--wallet wallet1", "--password rig1,c=RVN",
+			"--gpu-id 0,1", "--disable-cpu", "--api-enable --api-port 4400", want} {
+			if !strings.Contains(line, want) {
+				t.Errorf("%q is missing in %q", want, line)
+			}
+		}
+	}
+}

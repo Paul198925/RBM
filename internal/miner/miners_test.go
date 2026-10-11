@@ -29,7 +29,7 @@ func TestAllBuiltinDefinitionsAreComplete(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := Names(defs); !reflect.DeepEqual(got, []string{"rigel", "wildrig", "xmrig"}) {
+	if got := Names(defs); !reflect.DeepEqual(got, []string{"ccminer-tpfuemp", "rigel", "srbminer", "wildrig", "xmrig"}) {
 		t.Errorf("definitions = %v", got)
 	}
 	for name, def := range defs {

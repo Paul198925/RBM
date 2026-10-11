@@ -1,0 +1,60 @@
+# ccminer, the tpfuemp fork: an open source NVIDIA miner for many of the
+# smaller algorithms. https://github.com/tpfuemp/ccminer-tpfuemp
+name: ccminer-tpfuemp
+version: 2026.09.2
+api: ccminer
+vendor: NVIDIA
+fee: 0
+
+downloads:
+  windows:
+    url: https://github.com/tpfuemp/ccminer-tpfuemp/releases/download/v2026.09.2/ccminer-tpfuemp-2026.09.2-windows-x64.zip
+    sha256: 6e1aa25c9dc44be6c8257024c461ff507c7b1e98b37f8ba3bf873f75073b6884
+    executable: ccminer.exe
+  linux:
+    url: https://github.com/tpfuemp/ccminer-tpfuemp/releases/download/v2026.09.2/ccminer-tpfuemp-2026.09.2-linux-x64.tar.gz
+    sha256: d28a73874ca247a76046aa391d30ffbed7ba1782050f73ab1ec576da50d86f7d
+    executable: ccminer
+
+args:
+  - -a
+  - "{algo}"
+  - -o
+  - "{scheme}://{host}:{port}"
+  - -u
+  - "{user}"
+  - -p
+  - "{pass}"
+  - -d
+  - "{devices}"
+  # address of the API
+  - -b
+  - 127.0.0.1:{api_port}
+  # quiet: no per-share output
+  - -q
+  # seconds to wait before a retry when the pool cannot be reached
+  - -R
+  - "1"
+
+scheme: stratum+tcp
+scheme_tls: stratum+ssl
+
+# A selection of what zpool.ca offers and this fork mines; it supports many
+# more. The names are zpool's, miner_name is given where ccminer differs.
+algorithms:
+  - name: allium
+  - name: flex
+  - name: hoohashpepew
+    miner_name: hoohash
+  - name: mike
+  - name: minotaurx
+  - name: rinhash
+  - name: verushash
+    miner_name: verus
+  - name: x16rt
+  - name: yescrypt
+  - name: yescryptr8
+  - name: yescryptr16
+  - name: yespower
+  - name: yespowerr16
+  - name: yespowereqpay

@@ -49,6 +49,10 @@ func NewAPI(kind string) (API, error) {
 	case "wildrig":
 		// WildRig answers in XMRig's format, at the root of its API port
 		return xmrigAPI{path: "/"}, nil
+	case "ccminer":
+		return ccminerAPI{}, nil
+	case "srbminer":
+		return srbminerAPI{}, nil
 	}
 	return nil, fmt.Errorf("unknown miner api %q", kind)
 }

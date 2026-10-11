@@ -1,0 +1,61 @@
+# SRBMiner-Multi, a closed-source miner for GPUs and CPUs. Used here for
+# NVIDIA cards. https://github.com/doktor83/SRBMiner-Multi
+name: srbminer
+version: 3.7.5
+api: srbminer
+vendor: NVIDIA
+fee: 0.85
+
+downloads:
+  windows:
+    url: https://github.com/doktor83/SRBMiner-Multi/releases/download/3.7.5/SRBMiner-Multi-3-7-5-win64.zip
+    sha256: 11cb5d07819f626ae349931dacc85734c29177bcf6a946309d10c8ab11848e80
+    executable: SRBMiner-MULTI.exe
+  linux:
+    url: https://github.com/doktor83/SRBMiner-Multi/releases/download/3.7.5/SRBMiner-Multi-3-7-5-Linux.tar.gz
+    sha256: f18e33dac31d4fd5c6909409d7a82793477e8b93c63b897c7a19befff0c33ca8
+    executable: SRBMiner-MULTI
+
+args:
+  - --algorithm
+  - "{algo}"
+  - --pool
+  - "{host}:{port}"
+  - --wallet
+  - "{user}"
+  - --password
+  - "{pass}"
+  - --tls
+  - "{tls_bool}"
+  - --gpu-id
+  - "{devices}"
+  # mine with the NVIDIA cards named above only
+  - --disable-cpu
+  - --disable-gpu-amd
+  - --disable-gpu-intel
+  - --retry-time
+  - "10"
+  - --disable-startup-monitor
+  - --api-enable
+  - --api-port
+  - "{api_port}"
+
+# A selection of what zpool.ca offers. min_memory_mib is a rough lower bound
+# for the algorithms that build a DAG.
+algorithms:
+  - name: evrprogpow
+    min_memory_mib: 6144
+  - name: heavyhash
+  - name: kawpow
+    min_memory_mib: 6144
+  - name: meowpow
+    min_memory_mib: 6144
+  - name: phihash
+    min_memory_mib: 6144
+  # zpool's sccpow port is FiroPoW with the smaller DAG of the coin SCC
+  - name: sccpow
+    miner_name: firopow
+    min_memory_mib: 6144
+  - name: yescrypt
+  - name: yescryptr16
+  - name: yespower

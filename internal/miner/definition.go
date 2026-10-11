@@ -233,9 +233,9 @@ func (d *Definition) BuildArgs(job Job) ([]string, error) {
 		template = append(template, d.ThreadsArgs...)
 	}
 
-	scheme, tls := d.Scheme, "off"
+	scheme, tls, tlsBool := d.Scheme, "off", "false"
 	if job.TLS {
-		scheme, tls = d.SchemeTLS, "on"
+		scheme, tls, tlsBool = d.SchemeTLS, "on", "true"
 	}
 	indexes := make([]string, len(job.DeviceIndexes))
 	for i, index := range job.DeviceIndexes {
@@ -247,6 +247,7 @@ func (d *Definition) BuildArgs(job Job) ([]string, error) {
 		"{algo}":     job.Algorithm.NameForMiner(),
 		"{scheme}":   scheme,
 		"{tls}":      tls,
+		"{tls_bool}": tlsBool,
 		"{host}":     job.Host,
 		"{port}":     strconv.Itoa(job.Port),
 		"{user}":     job.User,
