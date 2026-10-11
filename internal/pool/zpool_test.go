@@ -17,7 +17,7 @@ func serve(t *testing.T, status int, body []byte) *Zpool {
 		w.Write(body)
 	}))
 	t.Cleanup(srv.Close)
-	return &Zpool{Wallet: "wallet1", Currency: "BTC", Worker: "rig1", Region: "eu", URL: srv.URL, CurrenciesURL: srv.URL}
+	return &Zpool{Wallet: "wallet1", Currency: "BTC", Worker: "rig1", Region: "eu", AlgoSwitching: true, URL: srv.URL, CurrenciesURL: srv.URL}
 }
 
 func near(a, b float64) bool { return math.Abs(a-b) <= 1e-9*math.Abs(b) }

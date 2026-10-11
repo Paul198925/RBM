@@ -12,6 +12,10 @@ type Offer struct {
 	// Algorithm is the normalized name, PoolAlgorithm the pool's spelling.
 	Algorithm     string
 	PoolAlgorithm string
+	// Coin is the symbol of the one coin this offer mines. It is empty
+	// where the pool picks the coin itself and may change it.
+	Coin     string
+	CoinName string
 
 	Host string
 	Port int
@@ -31,6 +35,14 @@ type Offer struct {
 	Hashrate float64
 	Workers  int
 	Updated  time.Time
+}
+
+// Label names the offer for logs: "zpool" or "zpool:RVN".
+func (o Offer) Label() string {
+	if o.Coin == "" {
+		return o.Pool
+	}
+	return o.Pool + ":" + o.Coin
 }
 
 // Source is a pool that can be asked for its offers.
