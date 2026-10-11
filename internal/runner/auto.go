@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"rbm/internal/api"
 	"rbm/internal/config"
 	"rbm/internal/device"
 	"rbm/internal/engine"
@@ -79,9 +80,21 @@ func Auto(ctx context.Context, cfg *config.Config, out io.Writer) error {
 		PowerCurrency:     cfg.Power.Currency,
 		TLS:               cfg.Zpool.TLS,
 		DataDir:           cfg.DataDir,
+		CPUEnabled:        cfg.CPU.Enabled,
+		CPUWatts:          cfg.CPU.Watts,
+		CPUThreads:        cfg.CPU.Threads,
 	}, deps)
 	if err != nil {
 		return err
+	}
+
+	if cfg.API.Listen != "" {
+		server, err := api.Start(cfg.API.Listen, api.Handler(e.Status, devices))
+		if err != nil {
+			return fmt.Errorf("status api: %w", err)
+		}
+		defer server.Close()
+		logf("status api: http://%s/api/status", server.Addr())
 	}
 	return e.Run(ctx)
 }

@@ -25,6 +25,21 @@ power:
   price_per_kwh: 0
   currency: EUR
 
+# Mining with the processor. Off by default: it makes the machine slow for
+# everything else, and the GPU miners need some CPU time themselves.
+cpu:
+  enabled: false
+  # assumed power draw while mining, for the electricity cost above
+  watts: 0
+  # number of threads to mine with, 0 lets the miner decide
+  threads: 0
+
+# Read-only status over HTTP: http://127.0.0.1:4000/api/status
+# Leave it on 127.0.0.1 unless the network is trusted - there is no login.
+# An empty address turns it off.
+api:
+  listen: 127.0.0.1:4000
+
 switching:
   # length of a round: how often the choice of miner is reconsidered
   interval: 1m

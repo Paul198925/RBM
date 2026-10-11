@@ -67,6 +67,28 @@ func TestCurrencyIsNormalised(t *testing.T) {
 	}
 }
 
+func TestCPUAndAPI(t *testing.T) {
+	cfg := Default()
+	if cfg.CPU.Enabled || cfg.API.Listen != "127.0.0.1:4000" {
+		t.Errorf("defaults: cpu %+v, api %+v", cfg.CPU, cfg.API)
+	}
+	cfg, err := Load(write(t, "cpu: {enabled: true, watts: 125, threads: 16}\napi: {listen: \"\"}\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.CPU != (CPU{Enabled: true, Watts: 125, Threads: 16}) || cfg.API.Listen != "" {
+		t.Errorf("cpu %+v, api %+v", cfg.CPU, cfg.API)
+	}
+	for name, content := range map[string]string{
+		"negative watts": "cpu: {watts: -1}",
+		"no port":        "api: {listen: localhost}",
+	} {
+		if _, err := Load(write(t, content)); err == nil {
+			t.Errorf("%s: no error", name)
+		}
+	}
+}
+
 func TestSwitchingAndPower(t *testing.T) {
 	cfg, err := Load(write(t, "power:\n  price_per_kwh: 0.32\n  currency: usd\n"+
 		"switching:\n  interval: 90s\n  min_run_time: 10m\n  hysteresis_percent: 3\n  mine_at_loss: true\n"))

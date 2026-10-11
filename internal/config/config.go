@@ -4,6 +4,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"regexp"
 	"slices"
@@ -21,6 +22,25 @@ type Config struct {
 	Zpool     Zpool     `yaml:"zpool"`
 	Power     Power     `yaml:"power"`
 	Switching Switching `yaml:"switching"`
+	CPU       CPU       `yaml:"cpu"`
+	API       API       `yaml:"api"`
+}
+
+// CPU controls mining with the processor. It is off unless enabled: a
+// mining CPU makes the machine slow for everything else.
+type CPU struct {
+	Enabled bool `yaml:"enabled"`
+	// Watts is the assumed power draw while mining, for the electricity
+	// cost; a CPU's draw cannot be measured the way a GPU's can.
+	Watts float64 `yaml:"watts"`
+	// Threads limits the miner, 0 lets it use what it sees fit.
+	Threads int `yaml:"threads"`
+}
+
+// API is the read-only HTTP status interface.
+type API struct {
+	// Listen is the address to serve on, empty to turn the API off.
+	Listen string `yaml:"listen"`
 }
 
 // Power describes what electricity costs. With a price of 0 it is not
@@ -77,6 +97,7 @@ func Default() *Config {
 		DataDir: "data",
 		Zpool:   Zpool{Currency: "BTC", Region: "eu"},
 		Power:   Power{Currency: "EUR"},
+		API:     API{Listen: "127.0.0.1:4000"},
 		Switching: Switching{
 			Interval:          time.Minute,
 			HysteresisPercent: 5,
@@ -145,6 +166,16 @@ func (c *Config) Validate() error {
 	}
 	if sw.BenchmarkTime < sw.Interval {
 		return fmt.Errorf("switching.benchmark_time %v must be at least one interval (%v)", sw.BenchmarkTime, sw.Interval)
+	}
+
+	if c.CPU.Watts < 0 || c.CPU.Threads < 0 {
+		return errors.New("cpu.watts and cpu.threads must not be negative")
+	}
+	c.API.Listen = strings.TrimSpace(c.API.Listen)
+	if c.API.Listen != "" {
+		if _, _, err := net.SplitHostPort(c.API.Listen); err != nil {
+			return fmt.Errorf("api.listen %q: use host:port, e.g. 127.0.0.1:4000", c.API.Listen)
+		}
 	}
 	return nil
 }
