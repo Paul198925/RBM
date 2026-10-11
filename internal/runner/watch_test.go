@@ -166,11 +166,17 @@ func TestActivityComesFromTheStore(t *testing.T) {
 func TestBalancesOfCoinPools(t *testing.T) {
 	app, _ := testApp(t)
 	var asked *pool.TwoMiners
+	var askedNames []string
 	var fail error
 	app.balanceFn = func(ctx context.Context, z *pool.Zpool) (pool.Balance, error) {
 		return pool.Balance{Pool: "zpool", Currency: z.Currency, Unpaid: 1}, nil
 	}
-	app.coinBalanceFn = func(ctx context.Context, t *pool.TwoMiners) ([]pool.Balance, error) {
+	app.coinBalanceFn = func(ctx context.Context, p pool.CoinPool) ([]pool.Balance, error) {
+		askedNames = append(askedNames, p.Name())
+		t, ok := p.(*pool.TwoMiners)
+		if !ok {
+			return []pool.Balance{{Pool: p.Name(), Currency: "RVN", Unpaid: 5}}, nil
+		}
 		asked = t
 		if fail != nil {
 			// one coin still answers
@@ -196,6 +202,16 @@ func TestBalancesOfCoinPools(t *testing.T) {
 	if asked == nil || asked.Wallets["RVN"] != "RAddr1" || asked.Worker != "rig9" || asked.Region != "us" || asked.Prices == nil {
 		t.Errorf("asked with %+v", asked)
 	}
+
+	// every coin pool that is enabled is asked
+	app.cfg.Pools.WoolyPooly.Enabled = true
+	askedNames = nil
+	app.readBalance(ctx)
+	if b := app.Balances(); len(b.Balances) != 4 || strings.Join(askedNames, " ") != "2miners woolypooly" || b.Balances[3].Pool != "woolypooly" {
+		t.Fatalf("asked %v, balances = %+v", askedNames, b)
+	}
+	app.cfg.Pools.WoolyPooly.Enabled = false
+	app.readBalance(ctx)
 
 	// a coin that fails keeps its old figure next to the fresh ones
 	app.balanceAt = time.Now().Add(-balanceInterval - time.Second)

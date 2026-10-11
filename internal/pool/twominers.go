@@ -28,34 +28,16 @@ const rewardMaxAge = time.Hour
 // TwoMinersRegions lists where 2miners.com runs stratum servers.
 var TwoMinersRegions = []string{"eu", "us", "asia"}
 
-// TwoMinersCoin is a coin that can be mined at 2miners.com.
-type TwoMinersCoin struct {
-	Symbol    string `json:"symbol"`
-	Name      string `json:"name"`
-	Algorithm string `json:"algorithm"`
-
-	// rpc is the coin's name in the pool's host names
-	rpc  string
-	port int
-	// divisor turns the pool's amounts into coins
-	divisor float64
-	// priceID names the coin at the price service
-	priceID string
-}
-
 // The coins of 2miners.com that a GPU can mine. The stratum ports are the
 // pool's ports for small rigs; port + 10000 is the same with TLS.
-var twoMinersCoins = []TwoMinersCoin{
-	{Symbol: "ERG", Name: "Ergo", Algorithm: "autolykos2", rpc: "erg", port: 8888, divisor: 1e9, priceID: "ergo"},
-	{Symbol: "ETC", Name: "Ethereum Classic", Algorithm: "etchash", rpc: "etc", port: 1010, divisor: 1e18, priceID: "ethereum-classic"},
-	{Symbol: "ETHW", Name: "EthereumPoW", Algorithm: "ethash", rpc: "ethw", port: 2020, divisor: 1e18, priceID: "ethereum-pow-iou"},
-	{Symbol: "NEXA", Name: "Nexa", Algorithm: "nexapow", rpc: "nexa", port: 5050, divisor: 100, priceID: "nexacoin"},
-	{Symbol: "RVN", Name: "Ravencoin", Algorithm: "kawpow", rpc: "rvn", port: 6060, divisor: 1e8, priceID: "ravencoin"},
-	{Symbol: "XNA", Name: "Neurai", Algorithm: "kawpow", rpc: "xna", port: 6060, divisor: 1e8, priceID: "neurai"},
+var twoMinersCoins = []poolCoin{
+	{CoinInfo: CoinInfo{"ERG", "Ergo", "autolykos2"}, rpc: "erg", port: 8888, divisor: 1e9, priceID: "ergo"},
+	{CoinInfo: CoinInfo{"ETC", "Ethereum Classic", "etchash"}, rpc: "etc", port: 1010, divisor: 1e18, priceID: "ethereum-classic"},
+	{CoinInfo: CoinInfo{"ETHW", "EthereumPoW", "ethash"}, rpc: "ethw", port: 2020, divisor: 1e18, priceID: "ethereum-pow-iou"},
+	{CoinInfo: CoinInfo{"NEXA", "Nexa", "nexapow"}, rpc: "nexa", port: 5050, divisor: 100, priceID: "nexacoin"},
+	{CoinInfo: CoinInfo{"RVN", "Ravencoin", "kawpow"}, rpc: "rvn", port: 6060, divisor: 1e8, priceID: "ravencoin"},
+	{CoinInfo: CoinInfo{"XNA", "Neurai", "kawpow"}, rpc: "xna", port: 6060, divisor: 1e8, priceID: "neurai"},
 }
-
-// TwoMinersCoins lists the coins of 2miners.com that can be mined here.
-func TwoMinersCoins() []TwoMinersCoin { return slices.Clone(twoMinersCoins) }
 
 // TwoMiners reads 2miners.com, a pool with one stratum server per coin
 // that pays in the coin that is mined. So it takes a wallet per coin, and
@@ -70,8 +52,7 @@ type TwoMiners struct {
 	// ExcludeCoins are not offered.
 	ExcludeCoins []string
 
-	// Prices returns what coins cost in BTC, by the price service's id.
-	Prices func(ctx context.Context, ids []string) (map[string]float64, error)
+	Prices PriceFunc
 
 	// API is a format string with one %s for the coin and Client the HTTP
 	// client; both are replaceable for tests.
@@ -91,8 +72,8 @@ func (t *TwoMiners) Name() string { return "2miners" }
 
 // coins returns the coins there is a wallet for, without the excluded ones
 // if mining is asked about.
-func (t *TwoMiners) coins(mining bool) []TwoMinersCoin {
-	var coins []TwoMinersCoin
+func (t *TwoMiners) coins(mining bool) []poolCoin {
+	var coins []poolCoin
 	for _, c := range twoMinersCoins {
 		if t.Wallets[c.Symbol] == "" || (mining && slices.Contains(t.ExcludeCoins, c.Symbol)) {
 			continue
@@ -105,7 +86,7 @@ func (t *TwoMiners) coins(mining bool) []TwoMinersCoin {
 var errNotFound = errors.New("not found")
 
 // get reads one JSON document of the pool's API for a coin into v.
-func (t *TwoMiners) get(ctx context.Context, coin TwoMinersCoin, path string, v any) error {
+func (t *TwoMiners) get(ctx context.Context, coin poolCoin, path string, v any) error {
 	base := t.API
 	if base == "" {
 		base = twoMinersAPI
@@ -209,7 +190,7 @@ func (t *TwoMiners) Fetch(ctx context.Context) ([]Offer, error) {
 
 // offer works out what the pool pays for a coin that costs btc. It reports
 // false for a coin that cannot be mined there at the moment.
-func (t *TwoMiners) offer(ctx context.Context, coin TwoMinersCoin, btc float64) (Offer, bool, error) {
+func (t *TwoMiners) offer(ctx context.Context, coin poolCoin, btc float64) (Offer, bool, error) {
 	var stats twoMinersStats
 	if err := t.get(ctx, coin, "/stats", &stats); err != nil {
 		return Offer{}, false, err
@@ -235,9 +216,6 @@ func (t *TwoMiners) offer(ctx context.Context, coin TwoMinersCoin, btc float64) 
 	}
 
 	blocksPerDay := 86400 / blockTime
-	// what one hash per second finds of the network's blocks in a day, on
-	// average: with PPLNS the luck of the pool evens out over time
-	perHash := btc * reward * blocksPerDay / network
 	offer := Offer{
 		Pool:          t.Name(),
 		Algorithm:     algo.Normalize(coin.Algorithm),
@@ -249,8 +227,9 @@ func (t *TwoMiners) offer(ctx context.Context, coin TwoMinersCoin, btc float64) 
 		TLSPort:       coin.port + 10000,
 		User:          t.Wallets[coin.Symbol] + "." + t.Worker,
 		Pass:          "x",
+		EthMode:       ethMode(coin.Algorithm, "ethproxy"),
 		// the pool's fee is taken off here: this is what arrives
-		Price:      perHash * (1 - twoMinersFee/100),
+		Price:      perHashPrice(btc, reward, blockTime, network, twoMinersFee),
 		FeePercent: twoMinersFee,
 		Hashrate:   hashrate,
 		Workers:    int(stats.WorkersTotal),
@@ -265,7 +244,7 @@ func (t *TwoMiners) offer(ctx context.Context, coin TwoMinersCoin, btc float64) 
 
 // reward returns the average reward of the blocks the pool found lately,
 // in coins. It is 0 if the pool lists none.
-func (t *TwoMiners) reward(ctx context.Context, coin TwoMinersCoin) (float64, error) {
+func (t *TwoMiners) reward(ctx context.Context, coin poolCoin) (float64, error) {
 	t.mu.Lock()
 	cached, ok := t.rewards[coin.Symbol]
 	t.mu.Unlock()
@@ -307,7 +286,7 @@ func (t *TwoMiners) reward(ctx context.Context, coin TwoMinersCoin) (float64, er
 	return reward, nil
 }
 
-func (t *TwoMiners) host(coin TwoMinersCoin) string {
+func (t *TwoMiners) host(coin poolCoin) string {
 	prefix := ""
 	if t.Region != "" && t.Region != "eu" {
 		prefix = t.Region + "-"

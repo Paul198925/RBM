@@ -196,10 +196,14 @@ func listPools(ctx context.Context, cfg *config.Config) error {
 	if cfg.Pools.Zpool.Enabled {
 		sources = append(sources, zpoolFor(cfg))
 	}
-	if cfg.Pools.TwoMinersReady() == nil {
-		t := cfg.Pools.TwoMiners
-		sources = append(sources, &pool.TwoMiners{Wallets: cfg.Pools.Wallets, Worker: cfg.General.Worker, Region: t.Region,
-			ExcludeCoins: t.ExcludeCoins, Prices: (&rates.CoinGecko{}).InBTC})
+	prices := &rates.CoinGecko{}
+	for _, name := range config.CoinPoolNames {
+		if cfg.Pools.CoinPoolReady(name) != nil {
+			continue
+		}
+		c := cfg.Pools.CoinPool(name)
+		sources = append(sources, pool.NewCoinPool(name, pool.CoinPoolSettings{Wallets: cfg.Pools.Wallets, Worker: cfg.General.Worker,
+			Region: c.Region, ExcludeCoins: c.ExcludeCoins, Prices: prices.InBTC}))
 	}
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', tabwriter.AlignRight)
 	fmt.Fprintln(w, "POOL\tALGORITHM\tCOIN\tBTC/GH/DAY\tPOOL HASHRATE\tWORKERS\tFEE\t")

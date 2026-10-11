@@ -31,34 +31,60 @@ type CoinGecko struct {
 	Client *http.Client
 
 	mu     sync.Mutex
-	key    string
-	prices map[string]float64
-	at     time.Time
+	prices map[string]coinPrice
+}
+
+// coinPrice is what the service said about a coin, 0 if it has no price.
+type coinPrice struct {
+	btc float64
+	at  time.Time
 }
 
 // InBTC returns the price of each coin in BTC, by the service's id of the
 // coin, e.g. "ravencoin". A coin the service does not know is left out.
+// Answers are kept per coin, so several askers with different coins do not
+// make each other's answers worthless.
 func (c *CoinGecko) InBTC(ctx context.Context, ids []string) (map[string]float64, error) {
 	ids = append([]string(nil), ids...)
 	sort.Strings(ids)
-	key := strings.Join(ids, ",")
-	if key == "" {
-		return map[string]float64{}, nil
-	}
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if key == c.key && time.Since(c.at) < coinPriceAge {
-		return c.prices, nil
-	}
-	prices, err := c.fetch(ctx, key)
-	if err != nil {
-		if key == c.key && time.Since(c.at) < coinPriceMaxAge {
-			return c.prices, nil
+	age := func(id string) time.Duration {
+		if p, ok := c.prices[id]; ok {
+			return time.Since(p.at)
 		}
-		return nil, err
+		return coinPriceMaxAge
 	}
-	c.key, c.prices, c.at = key, prices, time.Now()
+	due := false
+	for _, id := range ids {
+		due = due || age(id) >= coinPriceAge
+	}
+	if due {
+		fresh, err := c.fetch(ctx, strings.Join(ids, ","))
+		if err != nil {
+			// an old answer stands in, as long as there is one for every coin
+			for _, id := range ids {
+				if age(id) >= coinPriceMaxAge {
+					return nil, err
+				}
+			}
+		} else {
+			if c.prices == nil {
+				c.prices = map[string]coinPrice{}
+			}
+			now := time.Now()
+			for _, id := range ids {
+				c.prices[id] = coinPrice{btc: fresh[id], at: now}
+			}
+		}
+	}
+	prices := make(map[string]float64, len(ids))
+	for _, id := range ids {
+		if p := c.prices[id]; p.btc > 0 {
+			prices[id] = p.btc
+		}
+	}
 	return prices, nil
 }
 

@@ -56,7 +56,7 @@ type App struct {
 	telemetryFn func(context.Context) (map[int]device.Telemetry, error)
 	balanceFn   func(context.Context, *pool.Zpool) (pool.Balance, error)
 	// nil leaves the coin pools unasked
-	coinBalanceFn func(context.Context, *pool.TwoMiners) ([]pool.Balance, error)
+	coinBalanceFn func(context.Context, pool.CoinPool) ([]pool.Balance, error)
 	// what coins cost, for the pools that pay in the mined coin
 	coinPrices rates.CoinGecko
 
@@ -99,8 +99,8 @@ func NewApp(ctx context.Context, configDir string, out io.Writer) (*App, error) 
 		started:     time.Now(),
 		telemetryFn: device.GPUTelemetry,
 		balanceFn:   func(ctx context.Context, z *pool.Zpool) (pool.Balance, error) { return z.Balance(ctx) },
-		coinBalanceFn: func(ctx context.Context, t *pool.TwoMiners) ([]pool.Balance, error) {
-			return t.Balances(ctx)
+		coinBalanceFn: func(ctx context.Context, p pool.CoinPool) ([]pool.Balance, error) {
+			return p.Balances(ctx)
 		},
 		cfg:     cfg,
 		waiting: "starting",
@@ -196,25 +196,39 @@ func (a *App) gpuPower(ctx context.Context) (map[int]float64, error) {
 	return power, nil
 }
 
-// twoMinersFor makes the 2miners pool as cfg describes it.
-func (a *App) twoMinersFor(cfg *config.Config) *pool.TwoMiners {
-	t := cfg.Pools.TwoMiners
-	return &pool.TwoMiners{
-		Wallets:      cfg.Pools.Wallets,
-		Worker:       cfg.General.Worker,
-		Region:       t.Region,
-		ExcludeCoins: t.ExcludeCoins,
-		Prices:       a.coinPrices.InBTC,
+// coinPools makes the coin pools that cfg has ready to mine at.
+func (a *App) coinPools(cfg *config.Config) []pool.CoinPool {
+	var pools []pool.CoinPool
+	for _, name := range config.CoinPoolNames {
+		if cfg.Pools.CoinPoolReady(name) != nil {
+			continue
+		}
+		c := cfg.Pools.CoinPool(name)
+		p := pool.NewCoinPool(name, pool.CoinPoolSettings{
+			Wallets:      cfg.Pools.Wallets,
+			Worker:       cfg.General.Worker,
+			Region:       c.Region,
+			ExcludeCoins: c.ExcludeCoins,
+			Prices:       a.coinPrices.InBTC,
+		})
+		if p != nil {
+			pools = append(pools, p)
+		}
 	}
+	return pools
 }
 
 // readBalance asks the pools for the balances of the wallets, now and
 // then, and at once when a wallet changes.
 func (a *App) readBalance(ctx context.Context) {
 	cfg := a.Config()
-	z, t := cfg.Pools.Zpool, cfg.Pools.TwoMiners
+	z := cfg.Pools.Zpool
 	wallet := cfg.Pools.ZpoolWallet()
-	key := fmt.Sprint(z.Enabled, wallet, "/", z.Currency, t.Enabled, cfg.Pools.Wallets)
+	coinPools := a.coinPools(&cfg)
+	key := fmt.Sprint(z.Enabled, wallet, "/", z.Currency, cfg.Pools.Wallets)
+	for _, p := range coinPools {
+		key += "/" + p.Name()
+	}
 
 	a.mu.Lock()
 	due := key != a.balanceKey || time.Since(a.balanceAt) >= balanceInterval
@@ -252,9 +266,12 @@ func (a *App) readBalance(ctx context.Context) {
 			info.Balances = append(info.Balances, balance)
 		}
 	}
-	if t.Enabled && len(cfg.Pools.Wallets) > 0 && a.coinBalanceFn != nil {
+	for _, p := range coinPools {
+		if a.coinBalanceFn == nil {
+			break
+		}
 		callCtx, cancel := context.WithTimeout(ctx, time.Minute)
-		balances, err := a.coinBalanceFn(callCtx, a.twoMinersFor(&cfg))
+		balances, err := a.coinBalanceFn(callCtx, p)
 		cancel()
 		if err != nil {
 			if ctx.Err() != nil {
@@ -262,7 +279,7 @@ func (a *App) readBalance(ctx context.Context) {
 			}
 			failed = append(failed, err.Error())
 			// the coins that did answer are shown fresh, the others as they were
-			for _, b := range keep("2miners") {
+			for _, b := range keep(p.Name()) {
 				if !slices.ContainsFunc(balances, func(n pool.Balance) bool { return n.Currency == b.Currency }) {
 					balances = append(balances, b)
 				}
@@ -353,10 +370,16 @@ func (a *App) build(ctx context.Context, cfg *config.Config, store *stats.Store)
 	} else if z.Enabled {
 		a.logf("zpool is left out: %v", err)
 	}
-	if err := cfg.Pools.TwoMinersReady(); err == nil {
-		sources = append(sources, a.twoMinersFor(cfg))
-	} else if cfg.Pools.TwoMiners.Enabled {
-		a.logf("2miners is left out: %v", err)
+	poolTLS := map[string]bool{"zpool": z.TLS}
+	for _, p := range a.coinPools(cfg) {
+		sources = append(sources, p)
+	}
+	for _, name := range config.CoinPoolNames {
+		c := cfg.Pools.CoinPool(name)
+		poolTLS[name] = c.TLS
+		if err := cfg.Pools.CoinPoolReady(name); err != nil && c.Enabled {
+			a.logf("%s is left out: %v", name, err)
+		}
 	}
 
 	var devices []device.Device
@@ -400,7 +423,7 @@ func (a *App) build(ctx context.Context, cfg *config.Config, store *stats.Store)
 		MineAtLoss:        sw.MineAtLoss,
 		PowerPricePerKWh:  power.PricePerKWh,
 		PowerCurrency:     power.Currency,
-		PoolTLS:           map[string]bool{"zpool": z.TLS, "2miners": cfg.Pools.TwoMiners.TLS},
+		PoolTLS:           poolTLS,
 		DataDir:           cfg.General.DataDir,
 		CPUEnabled:        cfg.General.CPU.Enabled,
 		CPUWatts:          cfg.General.CPU.Watts,
@@ -534,7 +557,9 @@ func cloneConfig(c *config.Config) config.Config {
 	out := *c
 	out.Pools.Zpool.Coins = slices.Clone(c.Pools.Zpool.Coins)
 	out.Pools.Zpool.ExcludeCoins = slices.Clone(c.Pools.Zpool.ExcludeCoins)
-	out.Pools.TwoMiners.ExcludeCoins = slices.Clone(c.Pools.TwoMiners.ExcludeCoins)
+	for _, name := range config.CoinPoolNames {
+		out.Pools.CoinPool(name).ExcludeCoins = slices.Clone(c.Pools.CoinPool(name).ExcludeCoins)
+	}
 	out.Pools.Wallets = maps.Clone(c.Pools.Wallets)
 	out.Algorithms.Only = slices.Clone(c.Algorithms.Only)
 	out.Algorithms.Exclude = slices.Clone(c.Algorithms.Exclude)
@@ -576,13 +601,11 @@ func (a *App) SaveConfig(cfg config.Config) error {
 
 func (a *App) Meta(ctx context.Context) api.Meta {
 	meta := api.Meta{
-		Version:   Version,
-		ConfigDir: a.configDir,
-		Regions:   config.ZpoolRegions,
-
-		TwoMinersRegions: config.TwoMinersRegions,
-		TwoMinersCoins:   pool.TwoMinersCoins(),
-		Currencies:       a.payoutCurrencies(ctx),
+		Version:    Version,
+		ConfigDir:  a.configDir,
+		Regions:    config.ZpoolRegions,
+		CoinPools:  pool.CoinPools(),
+		Currencies: a.payoutCurrencies(ctx),
 	}
 	if abs, err := filepath.Abs(a.configDir); err == nil {
 		meta.ConfigDir = abs

@@ -168,6 +168,7 @@ func TestWalletsAndCoinPools(t *testing.T) {
 		"  ltc: LAddr1",
 		"zpool: {currency: ltc}",
 		"2miners: {enabled: true, region: us, exclude_coins: [xna, XNA]}",
+		"woolypooly: {enabled: true, exclude_coins: [firo]}",
 	}, nl) + nl}))
 	if err != nil {
 		t.Fatal(err)
@@ -179,9 +180,15 @@ func TestWalletsAndCoinPools(t *testing.T) {
 	if !p.TwoMiners.Enabled || p.TwoMiners.Region != "us" || len(p.TwoMiners.ExcludeCoins) != 1 || p.TwoMiners.ExcludeCoins[0] != "XNA" {
 		t.Errorf("2miners = %+v", p.TwoMiners)
 	}
+	if !p.WoolyPooly.Enabled || p.WoolyPooly.Region != "eu" || len(p.WoolyPooly.ExcludeCoins) != 1 || p.WoolyPooly.ExcludeCoins[0] != "FIRO" {
+		t.Errorf("woolypooly = %+v", p.WoolyPooly)
+	}
 	// zpool takes the wallet of its payout coin unless it has its own
-	if p.ZpoolWallet() != "LAddr1" || p.ZpoolReady() != nil || p.TwoMinersReady() != nil || cfg.ReadyToMine() != nil {
-		t.Errorf("zpool wallet %q, ready: %v, %v, %v", p.ZpoolWallet(), p.ZpoolReady(), p.TwoMinersReady(), cfg.ReadyToMine())
+	if p.ZpoolWallet() != "LAddr1" || p.ZpoolReady() != nil || p.CoinPoolReady("2miners") != nil || p.CoinPoolReady("woolypooly") != nil || cfg.ReadyToMine() != nil {
+		t.Errorf("zpool wallet %q, ready: %v, %v, %v", p.ZpoolWallet(), p.ZpoolReady(), p.CoinPoolReady("2miners"), cfg.ReadyToMine())
+	}
+	if p.CoinPoolReady("nopool") == nil {
+		t.Error("an unknown pool is ready")
 	}
 	cfg.Pools.Zpool.Wallet = "own"
 	if cfg.Pools.ZpoolWallet() != "own" {
@@ -220,6 +227,7 @@ func TestWalletsAndCoinPools(t *testing.T) {
 		"empty":   func(c *Config) { c.Pools.Wallets["RVN"] = "" },
 		"twice":   func(c *Config) { c.Pools.Wallets["rvn"], c.Pools.Wallets["RVN"] = "a", "b" },
 		"region":  func(c *Config) { c.Pools.TwoMiners.Region = "na" },
+		"region2": func(c *Config) { c.Pools.WoolyPooly.Region = "us" },
 	} {
 		c := Default()
 		change(c)

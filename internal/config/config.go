@@ -106,19 +106,20 @@ type API struct {
 type Pools struct {
 	// Wallets holds one payout address per coin, by its symbol. Pools that
 	// pay in the coin that is mined offer the coins that have one.
-	Wallets   Wallets   `yaml:"wallets" json:"wallets"`
-	Zpool     Zpool     `yaml:"zpool" json:"zpool"`
-	TwoMiners TwoMiners `yaml:"2miners" json:"twominers"`
+	Wallets    Wallets  `yaml:"wallets" json:"wallets"`
+	Zpool      Zpool    `yaml:"zpool" json:"zpool"`
+	TwoMiners  CoinPool `yaml:"2miners" json:"twominers"`
+	WoolyPooly CoinPool `yaml:"woolypooly" json:"woolypooly"`
 }
 
 // Wallets maps coin symbols like "RVN" to payout addresses.
 type Wallets map[string]string
 
-// TwoMiners configures 2miners.com. It pays every coin to that coin's
-// wallet.
-type TwoMiners struct {
+// CoinPool configures a pool that pays every coin to that coin's wallet,
+// like 2miners.com.
+type CoinPool struct {
 	Enabled bool `yaml:"enabled" json:"enabled"`
-	// Region selects the stratum servers: eu, us or asia.
+	// Region selects the stratum servers, one of the pool's regions.
 	Region string `yaml:"region" json:"region"`
 	// TLS connects to the stratum servers with TLS where possible.
 	TLS bool `yaml:"tls" json:"tls"`
@@ -150,13 +151,33 @@ func (p Pools) ZpoolReady() error {
 	return nil
 }
 
-// TwoMinersReady reports what keeps 2miners from being mined at.
-func (p Pools) TwoMinersReady() error {
-	if !p.TwoMiners.Enabled {
-		return errors.New("2miners is not enabled")
+// CoinPoolNames lists the coin pools, by the name their offers carry.
+var CoinPoolNames = []string{"2miners", "woolypooly"}
+
+// CoinPoolRegions lists the regions each coin pool runs stratum servers in.
+var CoinPoolRegions = map[string][]string{
+	"2miners":    {"eu", "us", "asia"},
+	"woolypooly": {"eu"},
+}
+
+// CoinPool returns the settings of the coin pool of that name.
+func (p *Pools) CoinPool(name string) *CoinPool {
+	switch name {
+	case "2miners":
+		return &p.TwoMiners
+	case "woolypooly":
+		return &p.WoolyPooly
+	}
+	return nil
+}
+
+// CoinPoolReady reports what keeps a coin pool from being mined at.
+func (p Pools) CoinPoolReady(name string) error {
+	if c := p.CoinPool(name); c == nil || !c.Enabled {
+		return fmt.Errorf("%s is not enabled", name)
 	}
 	if len(p.Wallets) == 0 {
-		return errors.New("2miners needs the wallet of a coin to mine there")
+		return fmt.Errorf("%s needs the wallet of a coin to mine there", name)
 	}
 	return nil
 }
@@ -215,9 +236,6 @@ type Devices struct {
 // ZpoolRegions lists the regions zpool.ca runs stratum servers in.
 var ZpoolRegions = []string{"na", "eu", "sea", "jp"}
 
-// TwoMinersRegions lists the regions 2miners.com runs stratum servers in.
-var TwoMinersRegions = []string{"eu", "us", "asia"}
-
 var (
 	workerRE   = regexp.MustCompile(`^[A-Za-z0-9_-]{1,32}$`)
 	currencyRE = regexp.MustCompile(`^[A-Z0-9]{2,10}$`)
@@ -253,7 +271,8 @@ func Default() *Config {
 				AlgoSwitching: true,
 				CoinMining:    true,
 			},
-			TwoMiners: TwoMiners{Region: "eu"},
+			TwoMiners:  CoinPool{Region: "eu"},
+			WoolyPooly: CoinPool{Region: "eu"},
 		},
 		Miners: Miners{},
 	}
@@ -345,12 +364,14 @@ func (c *Config) Validate() error {
 	}
 	c.Pools.Wallets = wallets
 
-	t := &c.Pools.TwoMiners
-	if !slices.Contains(TwoMinersRegions, t.Region) {
-		return fmt.Errorf("2miners region %q: use one of %v", t.Region, TwoMinersRegions)
-	}
-	if t.ExcludeCoins, err = symbols(t.ExcludeCoins, coinRE, "2miners excluded coin"); err != nil {
-		return err
+	for _, name := range CoinPoolNames {
+		t := c.Pools.CoinPool(name)
+		if !slices.Contains(CoinPoolRegions[name], t.Region) {
+			return fmt.Errorf("%s region %q: use one of %v", name, t.Region, CoinPoolRegions[name])
+		}
+		if t.ExcludeCoins, err = symbols(t.ExcludeCoins, coinRE, name+" excluded coin"); err != nil {
+			return err
+		}
 	}
 
 	if c.Miners == nil {
@@ -385,17 +406,29 @@ func (c *Config) Validate() error {
 // pool that can be mined at is enough.
 func (c *Config) ReadyToMine() error {
 	p := c.Pools
-	if !p.Zpool.Enabled && !p.TwoMiners.Enabled {
+	// the reason given is that of the first pool that is enabled
+	var reason error
+	if p.Zpool.Enabled {
+		if reason = p.ZpoolReady(); reason == nil {
+			return nil
+		}
+	}
+	for _, name := range CoinPoolNames {
+		if !p.CoinPool(name).Enabled {
+			continue
+		}
+		err := p.CoinPoolReady(name)
+		if err == nil {
+			return nil
+		}
+		if reason == nil {
+			reason = err
+		}
+	}
+	if reason == nil {
 		return errors.New("no pool is enabled")
 	}
-	zpool, twoMiners := p.ZpoolReady(), p.TwoMinersReady()
-	if zpool == nil || twoMiners == nil {
-		return nil
-	}
-	if p.Zpool.Enabled {
-		return zpool
-	}
-	return twoMiners
+	return reason
 }
 
 // symbols normalizes a list of upper case identifiers.
