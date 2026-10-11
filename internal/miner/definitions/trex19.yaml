@@ -1,0 +1,57 @@
+# T-Rex 0.19.14 of March 2021, installed next to the current T-Rex for the
+# algorithms that later versions dropped. https://github.com/trexminer/T-Rex
+#
+# This is the build for CUDA 11.1, the one for cards of the RTX 30 series
+# and older; whether a program this old starts with a current driver shows
+# in the first benchmark. The project publishes no checksums; the ones
+# below were taken from the archives on the official release page on
+# 2026-10-11. The options are the ones this version's own README lists.
+name: trex19
+version: 0.19.14
+api: trex
+vendor: NVIDIA
+fee: 1.0
+
+downloads:
+  windows:
+    url: https://github.com/trexminer/T-Rex/releases/download/0.19.14/t-rex-0.19.14-win-cuda11.1.zip
+    sha256: bb0e7305720610cfac5db5028441039bef30d0b7b6132bfdf2980deb5e6a5867
+    executable: t-rex.exe
+  linux:
+    url: https://github.com/trexminer/T-Rex/releases/download/0.19.14/t-rex-0.19.14-linux-cuda11.1.tar.gz
+    sha256: 456a273ad7c459a6b764b20b79ab8158a4cd9d6cd68d967dca0632a67df49023
+    executable: t-rex
+
+args:
+  - -a
+  - "{algo}"
+  - -o
+  - "{scheme}://{host}:{port}"
+  - -u
+  - "{user}"
+  - -p
+  - "{pass}"
+  - -d
+  - "{devices}"
+  # the API can also change settings; here it may only be read
+  - --api-bind-http
+  - "127.0.0.1:{api_port}"
+  - --api-read-only
+  - --no-watchdog
+  - --no-color
+
+scheme: stratum+tcp
+scheme_tls: stratum+ssl
+
+algorithms:
+  # only this version mines MegaMEC
+  - name: megamec
+  # a second or third miner for these
+  - name: balloon
+  - name: hmq1725
+  - name: megabtx
+  - name: timetravel
+  - name: x16rt
+  - name: x16rv2
+  - name: x21s
+  - name: x25x

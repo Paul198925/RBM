@@ -7,11 +7,9 @@ import (
 )
 
 // The algorithms zpool.ca listed on 2026-10-11, in the engine's spelling.
-// megamec is missing on purpose: only versions of miner programs from 2021
-// and 2022 mine it.
 var zpoolAlgorithms = strings.Fields(`allium anime argon2d1000 argon2d16000 argon2d4096 argon2d500 balloon bmw512 curve
 	equihash144 equihash192 evrprogpow firopow flex ghostrider heavyhash hmq1725 hoohashpepew kawpow
-	lyra2z330 m7m megabtx meowpow meraki mike minotaurx neoscryptxaya phihash power2b
+	lyra2z330 m7m megabtx megamec meowpow meraki mike minotaurx neoscryptxaya phihash power2b
 	rinhash sccpow scryptn2 sha3256t sha512256d skein2 skydoge soterg timetravel
 	verthash verushash whirlpool whirlpoolx2 x16rt x16rv2 x21s x25x yescrypt yescryptr16 yescryptr32 yescryptr8 yespower
 	yespoweradvc yespowereqpay yespowerltncg yespowermgpc yespowerr16 yespowersmt yespowersugar yespowertide yespowerurx`)
@@ -52,6 +50,38 @@ func TestEveryZpoolAlgorithmHasAMiner(t *testing.T) {
 			}
 			seen = append(seen, a.Name)
 		}
+	}
+}
+
+func TestOldTrexMinesWhatTheNewOneDropped(t *testing.T) {
+	old, current := builtin1(t, "trex19"), builtin1(t, "trex")
+	megamec, ok := old.Algorithm("megamec")
+	if !ok {
+		t.Fatal("trex19 does not list megamec")
+	}
+	// the two versions are installed side by side and share no algorithm
+	if old.Downloads["windows"].URL == current.Downloads["windows"].URL || old.Version == current.Version {
+		t.Errorf("trex19 is the same program as trex")
+	}
+	for _, a := range old.Algorithms {
+		if _, both := current.Algorithm(a.Name); both {
+			t.Errorf("both versions mine %s", a.Name)
+		}
+	}
+	args, err := old.BuildArgs(Job{Algorithm: megamec, DeviceIndexes: []int{0, 1}, APIPort: 4500, Host: "megamec.eu.mine.zpool.ca", Port: 4321,
+		User: "wallet1", Pass: "rig1,c=BTC"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	line := strings.Join(args, " ")
+	for _, want := range []string{"-a megamec", "-o stratum+tcp://megamec.eu.mine.zpool.ca:4321", "-d 0,1", "--api-bind-http 127.0.0.1:4500", "--api-read-only"} {
+		if !strings.Contains(line, want) {
+			t.Errorf("%q is missing in %q", want, line)
+		}
+	}
+	// an option the old version does not know would keep it from starting
+	if strings.Contains(line, "--no-new-block-info") {
+		t.Errorf("an option of the new version: %s", line)
 	}
 }
 
