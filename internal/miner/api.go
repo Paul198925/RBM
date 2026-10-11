@@ -55,6 +55,8 @@ func NewAPI(kind string) (API, error) {
 		return srbminerAPI{}, nil
 	case "gminer":
 		return gminerAPI{}, nil
+	case "lolminer":
+		return lolminerAPI{}, nil
 	}
 	return nil, fmt.Errorf("unknown miner api %q", kind)
 }

@@ -147,3 +147,43 @@ func (gminerAPI) Poll(ctx context.Context, port int) (Sample, error) {
 	sample.Algorithms = map[string]AlgoSample{"": total}
 	return sample, nil
 }
+
+// lolminerAPI reads lolMiner's /summary document. The speeds come in the
+// unit the miner shows them in, with the factor that turns them into
+// hashes per second.
+type lolminerAPI struct{}
+
+type lolminerSummary struct {
+	Algorithms []struct {
+		Performance float64 `json:"Total_Performance"`
+		Factor      float64 `json:"Performance_Factor"`
+		Accepted    int64   `json:"Total_Accepted"`
+		Rejected    int64   `json:"Total_Rejected"`
+		Stales      int64   `json:"Total_Stales"`
+	} `json:"Algorithms"`
+	Workers []struct {
+		Power float64 `json:"Power"`
+	} `json:"Workers"`
+}
+
+func (lolminerAPI) Poll(ctx context.Context, port int) (Sample, error) {
+	var summary lolminerSummary
+	if err := getJSON(ctx, port, "/summary", &summary); err != nil {
+		return Sample{}, err
+	}
+	sample := Sample{Time: time.Now(), Algorithms: map[string]AlgoSample{"": {}}}
+	// the first entry is the algorithm that is mined; a second one would
+	// be the other half of dual mining, which is not used here
+	if len(summary.Algorithms) > 0 {
+		a := summary.Algorithms[0]
+		factor := a.Factor
+		if factor <= 0 {
+			factor = 1
+		}
+		sample.Algorithms[""] = AlgoSample{Hashrate: a.Performance * factor, Accepted: a.Accepted, Rejected: a.Rejected, Invalid: a.Stales}
+	}
+	for _, w := range summary.Workers {
+		sample.PowerWatts += w.Power
+	}
+	return sample, nil
+}

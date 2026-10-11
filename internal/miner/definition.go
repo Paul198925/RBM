@@ -35,10 +35,23 @@ type Definition struct {
 	Downloads map[string]Download `yaml:"downloads"`
 	Args      []string            `yaml:"args"`
 	// ThreadsArgs are added when the number of threads is limited.
-	ThreadsArgs []string    `yaml:"threads_args"`
-	Scheme      string      `yaml:"scheme"`
-	SchemeTLS   string      `yaml:"scheme_tls"`
-	Algorithms  []Algorithm `yaml:"algorithms"`
+	ThreadsArgs []string `yaml:"threads_args"`
+	Scheme      string   `yaml:"scheme"`
+	SchemeTLS   string   `yaml:"scheme_tls"`
+	// EthModes says what the miner needs for the stratum dialects of the
+	// Ethash family, by the name a pool gives its dialect. A dialect that
+	// is not listed needs nothing special.
+	EthModes   map[string]EthMode `yaml:"eth_modes"`
+	Algorithms []Algorithm        `yaml:"algorithms"`
+}
+
+// EthMode is how a miner is told to speak one stratum dialect.
+type EthMode struct {
+	// Scheme and SchemeTLS replace the definition's, if set.
+	Scheme    string `yaml:"scheme"`
+	SchemeTLS string `yaml:"scheme_tls"`
+	// Args are added to the miner's arguments.
+	Args []string `yaml:"args"`
 }
 
 type Download struct {
@@ -227,6 +240,8 @@ type Job struct {
 	TLS           bool
 	User          string
 	Pass          string
+	// EthMode names the pool's stratum dialect, empty for the usual one.
+	EthMode string
 	// Threads limits a CPU miner, 0 lets the miner decide.
 	Threads int
 }
@@ -244,9 +259,19 @@ func (d *Definition) BuildArgs(job Job) ([]string, error) {
 		template = append(template, d.ThreadsArgs...)
 	}
 
-	scheme, tls, tlsBool, tls01 := d.Scheme, "off", "false", "0"
+	plain, secure := d.Scheme, d.SchemeTLS
+	if mode, ok := d.EthModes[job.EthMode]; ok && job.EthMode != "" {
+		template = append(template, mode.Args...)
+		if mode.Scheme != "" {
+			plain = mode.Scheme
+		}
+		if mode.SchemeTLS != "" {
+			secure = mode.SchemeTLS
+		}
+	}
+	scheme, tls, tlsBool, tls01 := plain, "off", "false", "0"
 	if job.TLS {
-		scheme, tls, tlsBool, tls01 = d.SchemeTLS, "on", "true", "1"
+		scheme, tls, tlsBool, tls01 = secure, "on", "true", "1"
 	}
 	indexes := make([]string, len(job.DeviceIndexes))
 	for i, index := range job.DeviceIndexes {

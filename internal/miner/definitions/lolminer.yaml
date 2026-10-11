@@ -1,0 +1,73 @@
+# lolMiner, a closed-source GPU miner, used here for NVIDIA cards.
+# https://github.com/Lolliedieb/lolMiner-releases
+#
+# The checksums are the ones GitHub publishes for the release files.
+# Command line, algorithm names and fees follow RainbowMiner's use of it.
+name: lolminer
+version: 1.98a
+api: lolminer
+vendor: NVIDIA
+fee: 1.0
+
+downloads:
+  windows:
+    url: https://github.com/Lolliedieb/lolMiner-releases/releases/download/1.98a/lolMiner_v1.98a_Win64.zip
+    sha256: f2bbda2d2255155d50935967b8c55105b9aeefbd27cda3e8d01beaf535a16762
+    executable: lolMiner.exe
+  linux:
+    url: https://github.com/Lolliedieb/lolMiner-releases/releases/download/1.98a/lolMiner_v1.98a_Lin64.tar.gz
+    sha256: 0b8078299654a12846e4967f1db3506409cfb8b1031687a910965d1a99c6f270
+    executable: lolMiner
+
+args:
+  - --algo
+  - "{algo}"
+  - --pool
+  - "{host}:{port}"
+  - --user
+  - "{user}"
+  - --pass
+  - "{pass}"
+  - --tls
+  - "{tls}"
+  - --devices
+  - "{devices}"
+  - --apiport
+  - "{api_port}"
+  - --shortstats
+  - "5"
+  - --longstats
+  - "60"
+  - --connectattempts
+  - "3"
+  # leave a card that hangs to rbm: exit instead of restarting on its own
+  - --watchdog
+  - exit
+
+# the stratum dialects of Ethash and Etchash pools
+eth_modes:
+  ethproxy:
+    args: ["--ethstratum", "ETHPROXY"]
+  qtminer:
+    args: ["--ethstratum", "ETHV1"]
+
+algorithms:
+  # the memory figures follow the size of the coins' data in October 2026
+  - name: autolykos2
+    miner_name: AUTOLYKOS2
+    fee: 1.5
+    min_memory_mib: 7400
+  - name: etchash
+    miner_name: ETCHASH
+    fee: 0.7
+    min_memory_mib: 5120
+    args: ["--disable-dag-verify", "1"]
+  - name: ethash
+    miner_name: ETHASH
+    fee: 0.7
+    min_memory_mib: 7680
+    args: ["--disable-dag-verify", "1"]
+  - name: nexapow
+    miner_name: NEXA
+    fee: 2.0
+    min_memory_mib: 3072

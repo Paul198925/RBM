@@ -36,6 +36,11 @@ args:
 # how the stratum connection is spelled, without and with TLS
 scheme: stratum+tcp
 scheme_tls: stratum+ssl
+# Ethash and Etchash pools that speak the older "ethproxy" dialect
+eth_modes:
+  ethproxy:
+    scheme: ethproxy+tcp
+    scheme_tls: ethproxy+ssl
 
 algorithms:
   # min_memory_mib is a rough lower bound for the DAG of the coins a pool

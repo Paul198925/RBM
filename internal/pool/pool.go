@@ -23,6 +23,10 @@ type Offer struct {
 	TLSPort int
 	User    string
 	Pass    string
+	// EthMode names the stratum dialect of the pool where an algorithm of
+	// the Ethash family has several: "ethproxy" or "qtminer". Miners need
+	// to be told; it is empty for everything else.
+	EthMode string
 
 	// Prices are in BTC per day for one hash per second, as the pool
 	// reports them. Whether they include FeePercent is the pool's business.

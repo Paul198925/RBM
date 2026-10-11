@@ -92,6 +92,7 @@ func Launch(ctx context.Context, spec LaunchSpec) (Miner, error) {
 		TLS:           spec.TLS,
 		User:          spec.Offer.User,
 		Pass:          spec.Offer.Pass,
+		EthMode:       spec.Offer.EthMode,
 		Threads:       spec.Threads,
 	})
 	if err != nil {
