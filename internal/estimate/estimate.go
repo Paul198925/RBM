@@ -120,3 +120,22 @@ func round3(v float64) float64 {
 	rounded, _ := strconv.ParseFloat(strconv.FormatFloat(v, 'g', 3, 64), 64)
 	return rounded
 }
+
+// With returns a table that also holds entries, which win over what t has
+// for the same device, miner and algorithm. Entries that are not complete
+// are left out. t itself is not changed.
+func (t *Table) With(entries []Entry) *Table {
+	merged := &Table{entries: map[string]Entry{}}
+	if t != nil {
+		for k, e := range t.entries {
+			merged.entries[k] = e
+		}
+	}
+	for _, e := range entries {
+		if e.Device == "" || e.Miner == "" || e.Algorithm == "" || e.Hashrate <= 0 || e.PowerWatts < 0 {
+			continue
+		}
+		merged.entries[key(e.Device, e.Miner, e.Algorithm)] = e
+	}
+	return merged
+}

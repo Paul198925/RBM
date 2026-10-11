@@ -103,3 +103,30 @@ func TestBuiltinHasSaneFigures(t *testing.T) {
 		t.Errorf("RTX 3060 with rigel on kawpow: %+v, %v", e, ok)
 	}
 }
+
+func TestWith(t *testing.T) {
+	base, err := Parse([]byte(sample))
+	if err != nil {
+		t.Fatal(err)
+	}
+	merged := base.With([]Entry{
+		{Device: "geforce rtx 3060", Miner: "rigel", Algorithm: "kawpow", Hashrate: 21e6},
+		{Device: "GeForce RTX 4070", Miner: "rigel", Algorithm: "kawpow", Hashrate: 30e6},
+		{Device: "GeForce RTX 4070", Miner: "rigel", Algorithm: "ethash"},
+	})
+	// the newer figure wins, what it does not cover stays, nonsense is left out
+	if e, _ := merged.Lookup("GeForce RTX 3060", "rigel", "kawpow"); e.Hashrate != 21e6 {
+		t.Errorf("kawpow = %+v", e)
+	}
+	if _, ok := merged.Lookup("GeForce RTX 3060", "wildrig", "anime"); !ok || merged.Len() != 3 {
+		t.Errorf("%d entries", merged.Len())
+	}
+	// the table it was made from is as it was
+	if e, _ := base.Lookup("GeForce RTX 3060", "rigel", "kawpow"); e.Hashrate != 19.8e6 || base.Len() != 2 {
+		t.Errorf("the base changed: %+v", e)
+	}
+	var none *Table
+	if none.With(nil).Len() != 0 || none.With([]Entry{{Device: "X", Miner: "m", Algorithm: "a", Hashrate: 1}}).Len() != 1 {
+		t.Error("a nil table cannot be added to")
+	}
+}

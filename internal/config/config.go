@@ -45,7 +45,24 @@ type General struct {
 	Memory    Memory    `yaml:"memory" json:"memory"`
 	API       API       `yaml:"api" json:"api"`
 	Updates   Updates   `yaml:"updates" json:"updates"`
+	Sharing   Sharing   `yaml:"sharing" json:"sharing"`
 }
+
+// Sharing controls the exchange of measured hashrates with other rigs.
+type Sharing struct {
+	// URL is the address of the server the hashrates are exchanged
+	// through, empty to exchange nothing.
+	URL string `yaml:"url" json:"url"`
+	// Download fetches what other rigs measured, to start from.
+	Download bool `yaml:"download" json:"download"`
+	// Upload sends what this rig measured: card model, miner program,
+	// algorithm, hashrate and power draw. Off unless asked for.
+	Upload bool `yaml:"upload" json:"upload"`
+}
+
+// DefaultShareURL is where the hashrates are exchanged unless the
+// configuration says otherwise. It is empty as long as no server runs.
+const DefaultShareURL = ""
 
 // Updates controls what is done about newer releases of the program.
 type Updates struct {
@@ -279,6 +296,7 @@ func Default() *Config {
 			Memory:  Memory{MinFreeRAMGB: 2, ReservedVRAMGB: 0.5},
 			API:     API{Listen: "127.0.0.1:4000"},
 			Updates: Updates{Check: true},
+			Sharing: Sharing{URL: DefaultShareURL, Download: true},
 		},
 		Pools: Pools{
 			Wallets: Wallets{},
@@ -334,6 +352,10 @@ func (c *Config) Validate() error {
 	}
 	if g.Memory.MinFreeRAMGB < 0 || g.Memory.ReservedVRAMGB < 0 {
 		return errors.New("memory.min_free_ram_gb and memory.reserved_vram_gb must not be negative")
+	}
+	g.Sharing.URL = strings.TrimRight(strings.TrimSpace(g.Sharing.URL), "/")
+	if u := g.Sharing.URL; u != "" && !strings.HasPrefix(u, "https://") && !strings.HasPrefix(u, "http://") {
+		return fmt.Errorf("sharing.url %q: use an address like https://example.org", u)
 	}
 	g.API.Listen = strings.TrimSpace(g.API.Listen)
 	if g.API.Listen != "" {

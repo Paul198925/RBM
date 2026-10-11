@@ -869,6 +869,10 @@ function setupGeneral() {
     h('div', { class: 'section' }, h('h3', {}, 'Memory'),
       numberField('Min. Free RAM, in GB', 'general.memory.min_free_ram_gb', 'Main memory (RAM and page file together) that is left for everything else. A miner whose algorithm needs more than the rest is not started. This is what keeps two miners from building a large DAG at the same time and running the machine out of memory.', '0.5'),
       numberField('Reserved GPU VRAM, in GB', 'general.memory.reserved_vram_gb', 'Graphics memory that is left alone on every card, for example for the desktop.', '0.1')),
+    h('div', { class: 'section' }, h('h3', {}, 'Shared hashrates'),
+      textField('Server', 'general.sharing.url', 'The address rigs exchange their measured hashrates through, e.g. https://example.org. Empty exchanges nothing; the estimates that come with rbm are still used.'),
+      boolField('Fetch what others measured', 'general.sharing.download', 'Twice a day, fetch the hashrates other rigs measured with the same cards, to start from them. They count from the next start of the miners.'),
+      boolField('Share what this rig measured', 'general.sharing.upload', 'Twice a day, send the hashrates measured here: card model, miner program with version, algorithm, hashrate and power draw, under a random number made up for this rig. No wallet, no rig name. Off unless you turn it on.')),
     h('div', { class: 'section' }, h('h3', {}, 'Updates'),
       field('This version', state.update && state.update.latest
         ? (state.update.available ? 'rbm ' + state.update.latest + ' is available.' : 'This is the newest version.') : 'GitHub has not been asked yet.',

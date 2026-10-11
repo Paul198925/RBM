@@ -150,6 +150,7 @@ func (a *App) Run(ctx context.Context) error {
 	defer stopWatching()
 	go a.watch(watchCtx)
 	go a.watchUpdates(watchCtx)
+	go a.watchSharing(watchCtx)
 
 	// a restart for an update ends everything the way Ctrl+C does
 	ctx, stop := context.WithCancel(ctx)
@@ -228,20 +229,6 @@ func (a *App) gpuPower(ctx context.Context) (map[int]float64, error) {
 		power[index] = t.PowerWatts
 	}
 	return power, nil
-}
-
-// estimates returns the hashrates that come with the program, nil if they
-// are not wanted or cannot be read.
-func (a *App) estimates(wanted bool) *estimate.Table {
-	if !wanted {
-		return nil
-	}
-	table, err := estimate.Builtin()
-	if err != nil {
-		a.logf("%v", err)
-		return nil
-	}
-	return table
 }
 
 // ExportEstimates writes what this machine has measured to w, in the form
@@ -498,7 +485,7 @@ func (a *App) build(ctx context.Context, cfg *config.Config, store *stats.Store)
 		BenchmarkTime:     time.Duration(sw.BenchmarkTime),
 		HysteresisPercent: sw.HysteresisPercent,
 		MineAtLoss:        sw.MineAtLoss,
-		Estimates:         a.estimates(sw.UseEstimates),
+		Estimates:         a.estimates(sw.UseEstimates, cfg.General.DataDir),
 		PowerPricePerKWh:  power.PricePerKWh,
 		PowerCurrency:     power.Currency,
 		PoolTLS:           poolTLS,

@@ -122,6 +122,14 @@ Where the list has a figure for your card, rbm compares with it right away. An e
 
 The list is short so far: an RTX 3060 and an RTX 2080 SUPER. To add your cards, let rbm benchmark, run `rbm estimates`, and send what it prints as a pull request to that file. It prints card model, miner program, version, algorithm, hashrate and power draw, and nothing about you or your rig.
 
+Rigs can also exchange their hashrates through a server, set under `sharing` in `config.yaml` or on the Setup page:
+
+- `url` is the server's address. Without one nothing is exchanged.
+- `download: true` (the default) fetches twice a day what other rigs measured. It wins over the list that comes with rbm, and counts from the next start of the miners.
+- `upload: true` sends what this rig measured: card model, miner program with version, algorithm, hashrate and power draw, under a random number the rig makes up for itself. It is off unless you turn it on.
+
+The server hands out the median per card, miner program and algorithm, so that one rig with a wrong figure moves it little. It is not part of this repository. What rbm sends to it and takes from it is in [`internal/share`](internal/share); whatever comes from the server is checked the same way as what a rig may send.
+
 ### Updates
 
 A few times a day rbm asks GitHub whether there is a newer release, and shows it on the dashboard. **Update now** fetches the release, checks it against the SHA-256 GitHub lists for the file, stops the miners and restarts with the new version. That restart needs `start.bat`, `start.sh` or the systemd service; started any other way, the new version waits for the next start.
