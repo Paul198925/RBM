@@ -1,0 +1,12 @@
+# reference checkout of RainbowMiner, not part of this project
+/_reference/
+
+# runtime data: miner binaries, logs, stats database
+/data/
+
+# local configuration with wallet addresses
+/config.yaml
+
+# build output
+/rbm
+*.exe
