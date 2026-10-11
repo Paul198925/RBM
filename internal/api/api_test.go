@@ -147,6 +147,7 @@ func (f *fakeBackend) Benchmarks() []engine.BenchmarkStatus {
 	list[2].MeasuredVersion, list[2].RejectedPercent = "0.50.9", &some
 	list[3].MeasuredSeconds = 32
 	list[4].FailedUntil = &until
+	list[4].FailReason = "reported no hashrate for 5m0s"
 	return list
 }
 func (f *fakeBackend) Log() []string { return []string{"12:00:00 started"} }

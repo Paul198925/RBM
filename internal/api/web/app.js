@@ -582,7 +582,8 @@ function renderBenchmarks() {
       cell: b => (b.rejected_percent === undefined ? '' : b.rejected_percent.toFixed(2).replace(/[.]?0+$/, '') + ' %'), cls: b => (b.rejected_percent > 5 ? 'hot' : '') },
     { key: 'power_watts', label: 'Power', num: true, cell: b => fmtWatts(b.power_watts) },
     { key: 'status', label: 'Status', filter: Object.keys(BENCH_STATUS),
-      cell: b => h('span', { class: 'badge ' + b.status.replace(/ /g, ''), title: BENCH_STATUS[b.status] || '' }, statusText(b)) },
+      cell: b => [h('span', { class: 'badge ' + b.status.replace(/ /g, ''), title: BENCH_STATUS[b.status] || '' }, statusText(b)),
+        b.fail_reason ? h('div', { class: 'reason' }, b.fail_reason) : null], cls: b => (b.fail_reason ? 'wrap' : '') },
     { key: 'updated', label: 'Date', filter: false, value: b => (b.updated ? new Date(b.updated).getTime() : 0), cell: b => fmtDate(b.updated) },
     { key: 'log', label: 'Log', filter: false, value: b => b.log || '',
       cell: b => (b.log ? h('a', { href: '#/console', title: b.log, onclick: () => { loadMinerLog(b.log); } }, 'log') : '') },
@@ -676,7 +677,7 @@ function renderWatchdog() {
   if (!s) return h('div', { class: 'empty' }, 'Loading ...');
   const rows = [];
   for (const g of s.groups) {
-    for (const d of g.disabled || []) rows.push(Object.assign({ group: g.name, hash_key: d.hash_key, out: true, until: d.until }, parseKey(d.hash_key)));
+    for (const d of g.disabled || []) rows.push(Object.assign({ group: g.name, hash_key: d.hash_key, out: true, until: d.until, reason: d.reason }, parseKey(d.hash_key)));
     for (const c of g.crashes || []) rows.push(Object.assign({ group: g.name, hash_key: c.hash_key, out: false, count: c.count, last: c.last }, parseKey(c.hash_key)));
   }
   const t = dataTable('watchdog', [
@@ -684,7 +685,8 @@ function renderWatchdog() {
     { key: 'algorithm', label: 'Algorithm' },
     { key: 'group', label: 'Device' },
     { key: 'state', label: 'State', value: r => (r.out ? 'taken out' : 'counting'), filter: ['taken out', 'counting'],
-      cell: r => (r.out ? h('span', { class: 'badge failed' }, 'taken out, tried again in ' + fmtUntil(r.until))
+      cls: r => (r.reason ? 'wrap' : ''),
+      cell: r => (r.out ? [h('span', { class: 'badge failed' }, 'taken out, tried again in ' + fmtUntil(r.until)), r.reason ? h('div', { class: 'reason' }, r.reason) : null]
         : h('span', { class: 'badge todo' }, r.count + (r.count === 1 ? ' failure' : ' failures') + ' in the last hour')) },
     { key: 'last', label: 'Last', filter: false, value: r => (r.last ? new Date(r.last).getTime() : 0), cell: r => (r.last ? fmtAgo(r.last) + ' ago' : '') },
     { key: 'action', label: '', filter: false, value: () => '',
@@ -1061,8 +1063,10 @@ async function refreshStatus() {
     return;
   }
   const banner = document.getElementById('banner');
-  banner.hidden = !state.status.waiting;
-  banner.textContent = state.status.waiting ? 'Not mining: ' + state.status.waiting : '';
+  const notices = (state.status.system.notices || []).slice();
+  if (state.status.waiting) notices.unshift('Not mining: ' + state.status.waiting);
+  banner.hidden = notices.length === 0;
+  banner.replaceChildren(...notices.map(text => h('div', {}, text)));
   renderTopbar();
 
   for (const what of NEEDS[state.page] || []) {

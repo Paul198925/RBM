@@ -126,7 +126,12 @@ func (l *launched) ExitText() string {
 	}
 	var exitErr interface{ ExitCode() int }
 	if errors.As(err, &exitErr) {
-		return fmt.Sprintf("exit code %d", exitErr.ExitCode())
+		text := fmt.Sprintf("exit code %d", exitErr.ExitCode())
+		// say what is probably missing, where the way it ended tells
+		if hint := failureHint(exitErr.ExitCode(), logTail(l.logPath)); hint != "" {
+			text += " - " + hint
+		}
+		return text
 	}
 	return err.Error()
 }

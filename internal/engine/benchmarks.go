@@ -44,6 +44,8 @@ type BenchmarkStatus struct {
 	MeasuredVersion string `json:"measured_version,omitempty"`
 	// FailedUntil is when a failed one is tried again.
 	FailedUntil *time.Time `json:"failed_until,omitempty"`
+	// FailReason says how a failed one failed, and what may be missing.
+	FailReason string `json:"fail_reason,omitempty"`
 	// Log is the newest log file of this combination. The engine leaves
 	// it empty.
 	Log string `json:"log,omitempty"`
@@ -123,6 +125,7 @@ func (e *Engine) listBenchmarks(now time.Time) error {
 				case failed:
 					b.Status = BenchFailed
 					b.FailedUntil = &until
+					b.FailReason = g.reasons[hashKey]
 				case g.run != nil && g.run.hashKey == hashKey && g.run.benchmark:
 					b.Status = BenchRunning
 				case done && e.versions[hashKey] != "" && e.versions[hashKey] != def.Version:

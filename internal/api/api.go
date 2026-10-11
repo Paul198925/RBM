@@ -71,6 +71,9 @@ type System struct {
 	Paused  bool      `json:"paused"`
 	// Memory is nil if it could not be read.
 	Memory *sysinfo.Memory `json:"memory,omitempty"`
+	// Notices say what is missing on this machine, e.g. the driver of
+	// the graphics cards.
+	Notices []string `json:"notices"`
 }
 
 // DeviceStatus is a device with what it reports about itself right now.

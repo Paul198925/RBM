@@ -33,8 +33,9 @@ func (d demoBackend) Status() engine.Status {
 				{ID: "hashrate/wildrig/GPU#00/kawpow@zpool:CLORE", HashKey: "hashrate/wildrig/GPU#00/kawpow", Miner: "wildrig", Algorithm: "kawpow", Pool: "zpool", Coin: "CLORE", Benchmarked: true, Hashrate: 18.2e6, Price: 1.1e-13, FeePercent: 0.75, Power: 175, RevenueBTC: 1.99e-6, ProfitBTC: -0.3e-6},
 				{ID: "hashrate/wildrig/GPU#00/skydoge@zpool", HashKey: "hashrate/wildrig/GPU#00/skydoge", Miner: "wildrig", Algorithm: "skydoge", Pool: "zpool", Price: 4.2e-9, FeePercent: 2},
 			},
-			Disabled: []engine.DisabledStatus{{HashKey: "hashrate/wildrig/GPU#00/firopow", Until: time.Now().Add(5*time.Hour + 12*time.Minute)}},
-			Crashes:  []engine.CrashStatus{{HashKey: "hashrate/srbminer/GPU#00/sha512256d", Count: 2, Last: time.Now().Add(-7 * time.Minute)}},
+			Disabled: []engine.DisabledStatus{{HashKey: "hashrate/wildrig/GPU#00/firopow", Until: time.Now().Add(5*time.Hour + 12*time.Minute),
+				Reason: "exited on its own: exit code 3221225781 - a DLL the program needs is missing, usually the Microsoft Visual C++ Redistributable. Install it with: winget install Microsoft.VCRedist.2015+.x64"}},
+			Crashes: []engine.CrashStatus{{HashKey: "hashrate/srbminer/GPU#00/sha512256d", Count: 2, Last: time.Now().Add(-7 * time.Minute)}},
 		},
 		{
 			Name: "RTX2080SUPER", Devices: []string{"GPU#01"}, State: "benchmarking", Reason: "needs a benchmark",
@@ -60,6 +61,7 @@ func (d demoBackend) Status() engine.Status {
 func (d demoBackend) System() System {
 	s := d.fakeBackend.System()
 	s.Started = time.Now().Add(-27*time.Hour - 44*time.Minute)
+	s.Notices = []string{"No NVIDIA driver was found (the program nvidia-smi is missing), so no graphics card can mine. Install the driver from https://www.nvidia.com/drivers and start rbm again."}
 	return s
 }
 

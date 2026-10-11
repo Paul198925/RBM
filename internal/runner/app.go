@@ -50,8 +50,10 @@ type App struct {
 	out         io.Writer
 	devices     []device.Device
 	definitions map[string]*miner.Definition
-	reload      chan struct{}
-	started     time.Time
+	// what is missing on this machine, as found at the start
+	notices []string
+	reload  chan struct{}
+	started time.Time
 	// replaceable for tests
 	telemetryFn func(context.Context) (map[int]device.Telemetry, error)
 	balanceFn   func(context.Context, *pool.Zpool) (pool.Balance, error)
@@ -82,15 +84,18 @@ func NewApp(ctx context.Context, configDir string, out io.Writer) (*App, error) 
 	if err != nil {
 		return nil, err
 	}
-	devices, err := device.Detect(ctx)
-	if err != nil {
-		return nil, err
-	}
+	devices, problem := device.DetectAll(ctx)
 	definitions, err := miner.Builtin()
 	if err != nil {
 		return nil, err
 	}
+	var notices []string
+	if problem != "" {
+		notices = append(notices, problem)
+		fmt.Fprintln(out, problem)
+	}
 	return &App{
+		notices:     notices,
 		configDir:   configDir,
 		out:         out,
 		devices:     devices,
@@ -482,7 +487,10 @@ func (a *App) Status() engine.Status {
 }
 
 func (a *App) System() api.System {
-	system := api.System{Started: a.started, Paused: a.isPaused()}
+	system := api.System{Started: a.started, Paused: a.isPaused(), Notices: a.notices}
+	if system.Notices == nil {
+		system.Notices = []string{}
+	}
 	if memory, err := sysinfo.ReadMemory(); err == nil {
 		system.Memory = &memory
 	}

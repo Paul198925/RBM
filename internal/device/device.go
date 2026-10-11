@@ -42,9 +42,24 @@ const smiTimeout = 15 * time.Second
 // Detect lists the NVIDIA GPUs and the CPU of this machine. A machine without
 // an NVIDIA driver simply has no GPUs.
 func Detect(ctx context.Context) ([]Device, error) {
+	devices, _ := DetectAll(ctx)
+	return devices, nil
+}
+
+// DetectAll is Detect with a word on what keeps the graphics cards from
+// being found, empty if nothing does. A machine whose driver is missing or
+// broken still has its CPU.
+func DetectAll(ctx context.Context) ([]Device, string) {
 	devices, err := detectNvidia(ctx)
-	if err != nil {
-		return nil, err
+	problem := ""
+	switch {
+	case errors.Is(err, exec.ErrNotFound):
+		problem = "No NVIDIA driver was found (the program nvidia-smi is missing), so no graphics card can mine. " +
+			"Install the driver from https://www.nvidia.com/drivers and start rbm again."
+	case err != nil:
+		devices = nil
+		problem = "The NVIDIA driver does not answer (" + err.Error() + "), so no graphics card can mine. " +
+			"Restart the machine or install the driver again: https://www.nvidia.com/drivers"
 	}
 	devices = append(devices, Device{
 		ID:      "CPU#00",
@@ -52,14 +67,11 @@ func Detect(ctx context.Context) ([]Device, error) {
 		Model:   cpuModel(),
 		Threads: runtime.NumCPU(),
 	})
-	return devices, nil
+	return devices, problem
 }
 
 func detectNvidia(ctx context.Context) ([]Device, error) {
 	out, err := nvidiaSMI(ctx, "--query-gpu=index,name,memory.total,uuid,pci.bus_id")
-	if errors.Is(err, exec.ErrNotFound) {
-		return nil, nil
-	}
 	if err != nil {
 		return nil, err
 	}

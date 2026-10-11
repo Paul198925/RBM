@@ -88,6 +88,8 @@ type CandidateStatus struct {
 type DisabledStatus struct {
 	HashKey string    `json:"hash_key"`
 	Until   time.Time `json:"until"`
+	// Reason says how it failed the last time.
+	Reason string `json:"reason,omitempty"`
 }
 
 // Status returns the latest snapshot. It is safe to call from any goroutine.
@@ -158,7 +160,7 @@ func (e *Engine) publish(now time.Time) {
 			gs.Candidates = append(gs.Candidates, cs)
 		}
 		for id, until := range g.disabled {
-			gs.Disabled = append(gs.Disabled, DisabledStatus{HashKey: id, Until: until})
+			gs.Disabled = append(gs.Disabled, DisabledStatus{HashKey: id, Until: until, Reason: g.reasons[id]})
 		}
 		sort.Slice(gs.Disabled, func(i, j int) bool { return gs.Disabled[i].HashKey < gs.Disabled[j].HashKey })
 		status.Groups = append(status.Groups, gs)

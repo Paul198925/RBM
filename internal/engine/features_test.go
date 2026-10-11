@@ -2,6 +2,8 @@ package engine
 
 import (
 	"math"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -274,5 +276,66 @@ func TestSilenceLimit(t *testing.T) {
 		if got := silenceLimit(c.algo, c.hashed); got != c.want {
 			t.Errorf("%s, hashed %v: %v, want %v", c.algo.Name, c.hashed, got, c.want)
 		}
+	}
+}
+
+func TestFailureHint(t *testing.T) {
+	for name, c := range map[string]struct {
+		code int
+		log  string
+		want string
+	}{
+		"missing dll, as windows reports it":  {code: 0xC0000135, want: "Visual C++"},
+		"missing dll, as a negative number":   {code: -1073741515, want: "Visual C++"},
+		"missing dll, named in the log":       {code: 1, log: "The code execution cannot proceed because VCRUNTIME140.dll was not found", want: "Visual C++"},
+		"missing library on linux":            {code: 127, log: "./t-rex: error while loading shared libraries: libnvidia-ml.so.1: cannot open shared object file", want: "libnvidia-ml.so.1"},
+		"old driver":                          {code: 1, log: "CUDA error: driver version is insufficient for CUDA runtime version", want: "driver is too old"},
+		"an ordinary crash says nothing more": {code: 1, log: "stratum connection lost"},
+		"a clean exit":                        {code: 0},
+	} {
+		got := failureHint(c.code, c.log)
+		if (c.want == "") != (got == "") || !strings.Contains(got, c.want) {
+			t.Errorf("%s: %q, want something with %q", name, got, c.want)
+		}
+	}
+
+	// the end of a long log is what counts
+	path := filepath.Join(t.TempDir(), "miner.log")
+	if err := os.WriteFile(path, []byte(strings.Repeat("mining along\n", 2000)+"error while loading shared libraries: libcurl.so.4: nope\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if tail := logTail(path); len(tail) > 4<<10 || !strings.Contains(failureHint(127, tail), "libcurl.so.4") {
+		t.Errorf("tail of %d bytes, hint %q", len(tail), failureHint(127, tail))
+	}
+	if logTail(filepath.Join(t.TempDir(), "none.log")) != "" {
+		t.Error("a log that does not exist has a tail")
+	}
+}
+
+func TestFailuresKeepTheirReason(t *testing.T) {
+	s := twoPrices(t, Options{})
+	s.advance(2 * time.Minute)
+	if s.running() == "" {
+		t.Fatal("nothing runs")
+	}
+	// the benchmark ends without a hashrate: taken out, with the reason
+	key := s.engine.Status().Groups[0].Candidates[0].HashKey
+	for _, c := range s.engine.Status().Groups[0].Candidates {
+		if c.ID == s.engine.Status().Groups[0].Running {
+			key = c.HashKey
+		}
+	}
+	s.miners[len(s.miners)-1].exit()
+	s.advance(20 * time.Second)
+	s.miners[len(s.miners)-1].exit()
+	s.advance(20 * time.Second)
+	s.miners[len(s.miners)-1].exit()
+	s.advance(20 * time.Second)
+	g := s.engine.Status().Groups[0]
+	if len(g.Disabled) != 1 || g.Disabled[0].HashKey != key || !strings.Contains(g.Disabled[0].Reason, "exited on its own: exit code 1") {
+		t.Fatalf("disabled = %+v", g.Disabled)
+	}
+	if b := s.bench(key); b.Status != BenchFailed || !strings.Contains(b.FailReason, "exit code 1") {
+		t.Errorf("benchmark = %+v", b)
 	}
 }

@@ -163,6 +163,8 @@ type group struct {
 	// by hashrate key
 	crashes  map[string][]time.Time
 	disabled map[string]time.Time
+	// why a miner on an algorithm failed the last time
+	reasons map[string]string
 
 	// what the last round saw and decided, for the status
 	options  []option
@@ -237,7 +239,7 @@ func New(opts Options, deps Deps) (*Engine, error) {
 // CPU into a group of its own if it is to mine. The GPU groups come first.
 func groupDevices(devices []device.Device, cpu bool) []*group {
 	newGroup := func(name, vendor string) *group {
-		return &group{name: name, vendor: vendor, crashes: map[string][]time.Time{}, disabled: map[string]time.Time{}}
+		return &group{name: name, vendor: vendor, crashes: map[string][]time.Time{}, disabled: map[string]time.Time{}, reasons: map[string]string{}}
 	}
 	byName := map[string]*group{}
 	var cpuGroup *group
@@ -408,6 +410,7 @@ func (e *Engine) ResetWatchdog() {
 			n += len(g.disabled) + len(g.crashes)
 			g.disabled = map[string]time.Time{}
 			g.crashes = map[string][]time.Time{}
+			g.reasons = map[string]string{}
 		}
 		e.deps.Logf("watchdog was reset, %d entries cleared", n)
 	})
@@ -523,7 +526,7 @@ func (e *Engine) checkRun(g *group, now time.Time) {
 	case <-r.miner.Done():
 		e.deps.Logf("%s: %s exited on its own (%s)", g.name, r.label(), r.miner.ExitText())
 		e.stop(g, stats.EndCrashed, now)
-		e.failed(g, r.hashKey, now, false)
+		e.failed(g, r.hashKey, now, false, "exited on its own: "+r.miner.ExitText())
 		return
 	default:
 	}
@@ -537,7 +540,7 @@ func (e *Engine) checkRun(g *group, now time.Time) {
 	}
 	e.deps.Logf("%s: %s reported no hashrate for %v", g.name, r.label(), now.Sub(silentSince).Round(time.Second))
 	e.stop(g, stats.EndNoHashrate, now)
-	e.failed(g, r.hashKey, now, r.benchmark)
+	e.failed(g, r.hashKey, now, r.benchmark, fmt.Sprintf("reported no hashrate for %v", now.Sub(silentSince).Round(time.Second)))
 }
 
 // silenceLimit is how long a miner may go without reporting a hashrate.
@@ -553,7 +556,8 @@ func silenceLimit(a miner.Algorithm, hashed bool) time.Duration {
 // failed counts a failure of a miner on an algorithm. A benchmark that
 // produced nothing takes it out at once, a miner that keeps failing after a
 // few tries.
-func (e *Engine) failed(g *group, hashKey string, now time.Time, benchmark bool) {
+func (e *Engine) failed(g *group, hashKey string, now time.Time, benchmark bool, reason string) {
+	g.reasons[hashKey] = reason
 	if benchmark {
 		g.disabled[hashKey] = now.Add(benchmarkPenalty)
 		e.deps.Logf("%s: benchmark of %s failed, not tried again for %v", g.name, hashKey, benchmarkPenalty)
@@ -887,7 +891,7 @@ func (e *Engine) start(ctx context.Context, g *group, o option, decision selecto
 	if err != nil {
 		if ctx.Err() == nil {
 			e.deps.Logf("%s: could not start %s: %v", g.name, o.label(), err)
-			e.failed(g, o.hashKey, now, false)
+			e.failed(g, o.hashKey, now, false, "could not be started: "+err.Error())
 		}
 		return
 	}

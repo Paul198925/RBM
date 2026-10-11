@@ -133,9 +133,9 @@ func loadConfig(dir string) (*config.Config, error) {
 }
 
 func listDevices(ctx context.Context) error {
-	devices, err := device.Detect(ctx)
-	if err != nil {
-		return err
+	devices, problem := device.DetectAll(ctx)
+	if problem != "" {
+		fmt.Fprintln(os.Stderr, problem)
 	}
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "ID\tKIND\tMODEL\tMEMORY\tTHREADS")
