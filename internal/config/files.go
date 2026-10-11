@@ -17,7 +17,7 @@ import (
 // setting is in the interface itself.
 var headers = map[string]string{
 	FileGeneral:    "General settings: rig name, electricity, switching, CPU mining, web interface.",
-	FilePools:      "Pools: wallet, payout coin and what may be mined there.",
+	FilePools:      "Pools: the wallets, and per pool what may be mined there.",
 	FileMiners:     "Miner programs: which are used, for which algorithms, with which extra arguments.",
 	FileAlgorithms: "Algorithms: which may be mined at all.",
 	FileDevices:    "Devices: which stay out of mining.",

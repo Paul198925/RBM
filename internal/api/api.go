@@ -97,6 +97,9 @@ type Meta struct {
 	Regions   []string    `json:"zpool_regions"`
 	// Currencies is empty if the pool could not be asked.
 	Currencies []pool.PayoutCurrency `json:"payout_currencies"`
+
+	TwoMinersRegions []string             `json:"twominers_regions"`
+	TwoMinersCoins   []pool.TwoMinersCoin `json:"twominers_coins"`
 }
 
 // MinerInfo describes a miner program the application knows.

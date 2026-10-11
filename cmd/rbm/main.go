@@ -15,6 +15,7 @@ import (
 	"rbm/internal/config"
 	"rbm/internal/device"
 	"rbm/internal/pool"
+	"rbm/internal/rates"
 	"rbm/internal/runner"
 )
 
@@ -26,7 +27,7 @@ commands:
               Everything can be watched and configured in the web
               interface, by default at http://127.0.0.1:4000/
   devices     list the GPUs and the CPU found on this machine
-  pools       list what zpool.ca currently pays, per algorithm and per coin
+  pools       list what the enabled pools currently pay, per algorithm and coin
   currencies  list the coins zpool.ca can pay the earnings out in
   mine        run one miner on one algorithm until Ctrl+C, for testing
                 -miner name   miner program (default rigel)
@@ -153,7 +154,7 @@ func listDevices(ctx context.Context) error {
 func zpoolFor(cfg *config.Config) *pool.Zpool {
 	z := cfg.Pools.Zpool
 	return &pool.Zpool{
-		Wallet:        z.Wallet,
+		Wallet:        cfg.Pools.ZpoolWallet(),
 		Currency:      z.Currency,
 		Worker:        cfg.General.Worker,
 		Region:        z.Region,
@@ -191,19 +192,30 @@ func listCurrencies(ctx context.Context, cfg *config.Config) error {
 }
 
 func listPools(ctx context.Context, cfg *config.Config) error {
-	offers, err := zpoolFor(cfg).Fetch(ctx)
-	if err != nil {
-		return err
+	var sources []pool.Source
+	if cfg.Pools.Zpool.Enabled {
+		sources = append(sources, zpoolFor(cfg))
+	}
+	if cfg.Pools.TwoMinersReady() == nil {
+		t := cfg.Pools.TwoMiners
+		sources = append(sources, &pool.TwoMiners{Wallets: cfg.Pools.Wallets, Worker: cfg.General.Worker, Region: t.Region,
+			ExcludeCoins: t.ExcludeCoins, Prices: (&rates.CoinGecko{}).InBTC})
 	}
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', tabwriter.AlignRight)
-	fmt.Fprintln(w, "ALGORITHM\tCOIN\tBTC/GH/DAY\tPOOL HASHRATE\tWORKERS\tFEE\t")
-	for _, o := range offers {
-		coin := o.Coin
-		if coin == "" {
-			coin = "(pool picks)"
+	fmt.Fprintln(w, "POOL\tALGORITHM\tCOIN\tBTC/GH/DAY\tPOOL HASHRATE\tWORKERS\tFEE\t")
+	for _, source := range sources {
+		offers, err := source.Fetch(ctx)
+		if err != nil {
+			return err
 		}
-		fmt.Fprintf(w, "%s\t%s\t%.8f\t%s\t%d\t%.1f%%\t\n",
-			o.Algorithm, coin, o.Price*1e9, runner.FormatHashrate(o.Hashrate), o.Workers, o.FeePercent)
+		for _, o := range offers {
+			coin := o.Coin
+			if coin == "" {
+				coin = "(pool picks)"
+			}
+			fmt.Fprintf(w, "%s\t%s\t%s\t%.8f\t%s\t%d\t%.1f%%\t\n",
+				o.Pool, o.Algorithm, coin, o.Price*1e9, runner.FormatHashrate(o.Hashrate), o.Workers, o.FeePercent)
+		}
 	}
 	return w.Flush()
 }

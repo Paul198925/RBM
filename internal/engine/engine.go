@@ -57,8 +57,11 @@ type Options struct {
 	// PowerPricePerKWh is in PowerCurrency, 0 to ignore electricity.
 	PowerPricePerKWh float64
 	PowerCurrency    string
-	TLS              bool
-	DataDir          string
+	// TLS connects to the pools with TLS where pool and miner can; PoolTLS
+	// says so for single pools, by name, and wins over TLS.
+	TLS     bool
+	PoolTLS map[string]bool
+	DataDir string
 
 	// CPUEnabled lets the CPU mine as well.
 	CPUEnabled bool
@@ -736,6 +739,14 @@ func (e *Engine) freeMemory(g *group, now time.Time) (mib float64, ok bool) {
 	return free, true
 }
 
+// wantsTLS reports whether the connection to a pool is to use TLS.
+func (e *Engine) wantsTLS(pool string) bool {
+	if want, ok := e.opts.PoolTLS[pool]; ok {
+		return want
+	}
+	return e.opts.TLS
+}
+
 // offersFor returns the fresh offers for an algorithm.
 func (e *Engine) offersFor(algorithm string, now time.Time) []pool.Offer {
 	var offers []pool.Offer
@@ -857,7 +868,7 @@ func (e *Engine) start(ctx context.Context, g *group, o option, decision selecto
 		Algorithm:  o.algo,
 		Devices:    g.devices,
 		Offer:      o.offer,
-		TLS:        e.opts.TLS && o.offer.TLSPort != 0 && o.def.SupportsTLS(),
+		TLS:        e.wantsTLS(o.offer.Pool) && o.offer.TLSPort != 0 && o.def.SupportsTLS(),
 		Threads:    e.threads(g),
 		ExtraArgs:  e.opts.Miners[o.def.Name].ExtraArgs,
 		DataDir:    e.opts.DataDir,

@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"rbm/internal/config"
 	"rbm/internal/device"
 	"rbm/internal/pool"
 	"rbm/internal/stats"
@@ -159,5 +160,55 @@ func TestActivityComesFromTheStore(t *testing.T) {
 	// the last three days, newest first
 	if len(runs) != 2 || runs[0].Hashrate != 1 || runs[1].Hashrate != 2 {
 		t.Errorf("runs = %+v", runs)
+	}
+}
+
+func TestBalancesOfCoinPools(t *testing.T) {
+	app, _ := testApp(t)
+	var asked *pool.TwoMiners
+	var fail error
+	app.balanceFn = func(ctx context.Context, z *pool.Zpool) (pool.Balance, error) {
+		return pool.Balance{Pool: "zpool", Currency: z.Currency, Unpaid: 1}, nil
+	}
+	app.coinBalanceFn = func(ctx context.Context, t *pool.TwoMiners) ([]pool.Balance, error) {
+		asked = t
+		if fail != nil {
+			// one coin still answers
+			return []pool.Balance{{Pool: "2miners", Currency: "RVN", Unpaid: 7}}, fail
+		}
+		return []pool.Balance{{Pool: "2miners", Currency: "ERG", Unpaid: 2}, {Pool: "2miners", Currency: "RVN", Unpaid: 3}}, nil
+	}
+	ctx := context.Background()
+
+	// zpool takes the wallet of its payout coin; 2miners is off
+	app.cfg.Pools.Wallets = config.Wallets{"BTC": "bc1addr", "RVN": "RAddr1", "ERG": "9addr"}
+	app.readBalance(ctx)
+	if b := app.Balances(); len(b.Balances) != 1 || b.Balances[0].Pool != "zpool" || asked != nil {
+		t.Fatalf("balances = %+v", b)
+	}
+
+	app.cfg.Pools.TwoMiners.Enabled, app.cfg.Pools.TwoMiners.Region = true, "us"
+	app.cfg.General.Worker = "rig9"
+	app.readBalance(ctx)
+	if b := app.Balances(); len(b.Balances) != 3 || b.Error != "" {
+		t.Fatalf("balances = %+v", b)
+	}
+	if asked == nil || asked.Wallets["RVN"] != "RAddr1" || asked.Worker != "rig9" || asked.Region != "us" || asked.Prices == nil {
+		t.Errorf("asked with %+v", asked)
+	}
+
+	// a coin that fails keeps its old figure next to the fresh ones
+	app.balanceAt = time.Now().Add(-balanceInterval - time.Second)
+	fail = errors.New("2miners ERG: status 502")
+	app.readBalance(ctx)
+	b := app.Balances()
+	if len(b.Balances) != 3 || !strings.Contains(b.Error, "502") {
+		t.Fatalf("balances = %+v", b)
+	}
+	for _, balance := range b.Balances {
+		want := map[string]float64{"zpool/BTC": 1, "2miners/RVN": 7, "2miners/ERG": 2}[balance.Pool+"/"+balance.Currency]
+		if balance.Unpaid != want {
+			t.Errorf("%s %s = %v, want %v", balance.Pool, balance.Currency, balance.Unpaid, want)
+		}
 	}
 }

@@ -156,8 +156,82 @@ func TestReadyToMine(t *testing.T) {
 	}
 	cfg = Default()
 	cfg.Pools.Zpool.Wallet, cfg.Pools.Zpool.Enabled = "addr", false
-	if err := cfg.ReadyToMine(); err == nil {
-		t.Error("ready without a pool")
+	if err := cfg.ReadyToMine(); err == nil || !strings.Contains(err.Error(), "no pool") {
+		t.Errorf("ready without a pool: %v", err)
+	}
+}
+
+func TestWalletsAndCoinPools(t *testing.T) {
+	cfg, err := LoadDir(dir(t, map[string]string{FilePools: strings.Join([]string{
+		"wallets:",
+		"  rvn: ' RAddr1 '",
+		"  ltc: LAddr1",
+		"zpool: {currency: ltc}",
+		"2miners: {enabled: true, region: us, exclude_coins: [xna, XNA]}",
+	}, nl) + nl}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := cfg.Pools
+	if len(p.Wallets) != 2 || p.Wallets["RVN"] != "RAddr1" || p.Wallets["LTC"] != "LAddr1" {
+		t.Errorf("wallets = %v", p.Wallets)
+	}
+	if !p.TwoMiners.Enabled || p.TwoMiners.Region != "us" || len(p.TwoMiners.ExcludeCoins) != 1 || p.TwoMiners.ExcludeCoins[0] != "XNA" {
+		t.Errorf("2miners = %+v", p.TwoMiners)
+	}
+	// zpool takes the wallet of its payout coin unless it has its own
+	if p.ZpoolWallet() != "LAddr1" || p.ZpoolReady() != nil || p.TwoMinersReady() != nil || cfg.ReadyToMine() != nil {
+		t.Errorf("zpool wallet %q, ready: %v, %v, %v", p.ZpoolWallet(), p.ZpoolReady(), p.TwoMinersReady(), cfg.ReadyToMine())
+	}
+	cfg.Pools.Zpool.Wallet = "own"
+	if cfg.Pools.ZpoolWallet() != "own" {
+		t.Errorf("zpool wallet = %q", cfg.Pools.ZpoolWallet())
+	}
+
+	// one pool that can be mined at is enough
+	cfg = Default()
+	cfg.Pools.TwoMiners.Enabled = true
+	if err := cfg.ReadyToMine(); err == nil || !strings.Contains(err.Error(), "zpool wallet") {
+		t.Errorf("ready without any wallet: %v", err)
+	}
+	cfg.Pools.Zpool.Enabled = false
+	if err := cfg.ReadyToMine(); err == nil || !strings.Contains(err.Error(), "2miners needs") {
+		t.Errorf("ready without any wallet: %v", err)
+	}
+	cfg.Pools.Wallets["ERG"] = "9addr"
+	cfg.Pools.Zpool.Enabled = true
+	if err := cfg.ReadyToMine(); err != nil {
+		t.Error(err)
+	}
+
+	// the defaults, saved and read again, keep the pools apart
+	d := filepath.Join(t.TempDir(), "config")
+	if err := SaveDir(d, cfg); err != nil {
+		t.Fatal(err)
+	}
+	again, err := LoadDir(d)
+	if err != nil || again.Pools.Wallets["ERG"] != "9addr" || !again.Pools.TwoMiners.Enabled {
+		t.Errorf("read again: %+v, %v", again, err)
+	}
+
+	for name, change := range map[string]func(*Config){
+		"symbol":  func(c *Config) { c.Pools.Wallets["r v n"] = "addr" },
+		"address": func(c *Config) { c.Pools.Wallets["RVN"] = "ad dr" },
+		"empty":   func(c *Config) { c.Pools.Wallets["RVN"] = "" },
+		"twice":   func(c *Config) { c.Pools.Wallets["rvn"], c.Pools.Wallets["RVN"] = "a", "b" },
+		"region":  func(c *Config) { c.Pools.TwoMiners.Region = "na" },
+	} {
+		c := Default()
+		change(c)
+		if err := c.Validate(); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+	// a line left empty in the interface is dropped
+	c := Default()
+	c.Pools.Wallets[""] = ""
+	if err := c.Validate(); err != nil || len(c.Pools.Wallets) != 0 {
+		t.Errorf("empty line: %v, %v", c.Pools.Wallets, err)
 	}
 }
 

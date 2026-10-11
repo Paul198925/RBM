@@ -43,7 +43,7 @@ type ManualOptions struct {
 // Mine runs one miner on one algorithm at zpool until ctx is cancelled or
 // the miner exits, and records what it measures.
 func Mine(ctx context.Context, cfg *config.Config, opts ManualOptions, out io.Writer) error {
-	if err := cfg.ReadyToMine(); err != nil {
+	if err := cfg.Pools.ZpoolReady(); err != nil {
 		return err
 	}
 	logf := func(format string, args ...any) {
@@ -81,7 +81,7 @@ func Mine(ctx context.Context, cfg *config.Config, opts ManualOptions, out io.Wr
 	}
 
 	zpool := &pool.Zpool{
-		Wallet:   cfg.Pools.Zpool.Wallet,
+		Wallet:   cfg.Pools.ZpoolWallet(),
 		Currency: cfg.Pools.Zpool.Currency,
 		Worker:   cfg.General.Worker,
 		Region:   cfg.Pools.Zpool.Region,

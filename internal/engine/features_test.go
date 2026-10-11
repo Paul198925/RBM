@@ -249,3 +249,10 @@ func TestWatchdogStatusAndReset(t *testing.T) {
 		t.Errorf("log:\n%s", strings.Join(s.logs, "\n"))
 	}
 }
+
+func TestTLSIsSetPerPool(t *testing.T) {
+	e := &Engine{opts: Options{TLS: true, PoolTLS: map[string]bool{"zpool": false}}}
+	if e.wantsTLS("zpool") || !e.wantsTLS("2miners") {
+		t.Errorf("zpool %v, 2miners %v", e.wantsTLS("zpool"), e.wantsTLS("2miners"))
+	}
+}

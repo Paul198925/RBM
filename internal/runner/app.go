@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -53,6 +55,10 @@ type App struct {
 	// replaceable for tests
 	telemetryFn func(context.Context) (map[int]device.Telemetry, error)
 	balanceFn   func(context.Context, *pool.Zpool) (pool.Balance, error)
+	// nil leaves the coin pools unasked
+	coinBalanceFn func(context.Context, *pool.TwoMiners) ([]pool.Balance, error)
+	// what coins cost, for the pools that pay in the mined coin
+	coinPrices rates.CoinGecko
 
 	mu           sync.Mutex
 	cfg          *config.Config
@@ -93,8 +99,11 @@ func NewApp(ctx context.Context, configDir string, out io.Writer) (*App, error) 
 		started:     time.Now(),
 		telemetryFn: device.GPUTelemetry,
 		balanceFn:   func(ctx context.Context, z *pool.Zpool) (pool.Balance, error) { return z.Balance(ctx) },
-		cfg:         cfg,
-		waiting:     "starting",
+		coinBalanceFn: func(ctx context.Context, t *pool.TwoMiners) ([]pool.Balance, error) {
+			return t.Balances(ctx)
+		},
+		cfg:     cfg,
+		waiting: "starting",
 	}, nil
 }
 
@@ -187,40 +196,81 @@ func (a *App) gpuPower(ctx context.Context) (map[int]float64, error) {
 	return power, nil
 }
 
-// readBalance asks the pool for the balance of the wallet, now and then,
-// and at once when the wallet changes.
+// twoMinersFor makes the 2miners pool as cfg describes it.
+func (a *App) twoMinersFor(cfg *config.Config) *pool.TwoMiners {
+	t := cfg.Pools.TwoMiners
+	return &pool.TwoMiners{
+		Wallets:      cfg.Pools.Wallets,
+		Worker:       cfg.General.Worker,
+		Region:       t.Region,
+		ExcludeCoins: t.ExcludeCoins,
+		Prices:       a.coinPrices.InBTC,
+	}
+}
+
+// readBalance asks the pools for the balances of the wallets, now and
+// then, and at once when a wallet changes.
 func (a *App) readBalance(ctx context.Context) {
 	cfg := a.Config()
-	z := cfg.Pools.Zpool
-	key := z.Wallet + "/" + z.Currency
+	z, t := cfg.Pools.Zpool, cfg.Pools.TwoMiners
+	wallet := cfg.Pools.ZpoolWallet()
+	key := fmt.Sprint(z.Enabled, wallet, "/", z.Currency, t.Enabled, cfg.Pools.Wallets)
 
 	a.mu.Lock()
 	due := key != a.balanceKey || time.Since(a.balanceAt) >= balanceInterval
+	// an old figure is better than none, as long as it is of the same wallets
+	var old []pool.Balance
+	if key == a.balanceKey {
+		old = a.balances.Balances
+	}
 	a.mu.Unlock()
 	if !due || a.balanceFn == nil {
 		return
 	}
+	keep := func(name string) (kept []pool.Balance) {
+		for _, b := range old {
+			if b.Pool == name {
+				kept = append(kept, b)
+			}
+		}
+		return kept
+	}
 
 	info := api.BalanceInfo{}
-	if z.Enabled && z.Wallet != "" {
+	var failed []string
+	if z.Enabled && wallet != "" {
 		callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		balance, err := a.balanceFn(callCtx, &pool.Zpool{Wallet: z.Wallet, Currency: z.Currency})
+		balance, err := a.balanceFn(callCtx, &pool.Zpool{Wallet: wallet, Currency: z.Currency})
 		cancel()
 		if err != nil {
 			if ctx.Err() != nil {
 				return
 			}
-			info.Error = err.Error()
-			// an old figure is better than none
-			a.mu.Lock()
-			if key == a.balanceKey {
-				info.Balances = a.balances.Balances
-			}
-			a.mu.Unlock()
+			failed = append(failed, err.Error())
+			info.Balances = append(info.Balances, keep("zpool")...)
 		} else {
-			info.Balances = []pool.Balance{balance}
+			info.Balances = append(info.Balances, balance)
 		}
 	}
+	if t.Enabled && len(cfg.Pools.Wallets) > 0 && a.coinBalanceFn != nil {
+		callCtx, cancel := context.WithTimeout(ctx, time.Minute)
+		balances, err := a.coinBalanceFn(callCtx, a.twoMinersFor(&cfg))
+		cancel()
+		if err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			failed = append(failed, err.Error())
+			// the coins that did answer are shown fresh, the others as they were
+			for _, b := range keep("2miners") {
+				if !slices.ContainsFunc(balances, func(n pool.Balance) bool { return n.Currency == b.Currency }) {
+					balances = append(balances, b)
+				}
+			}
+		}
+		info.Balances = append(info.Balances, balances...)
+	}
+	info.Error = strings.Join(failed, "; ")
 	a.mu.Lock()
 	a.balances, a.balanceKey, a.balanceAt = info, key, time.Now()
 	a.mu.Unlock()
@@ -279,22 +329,34 @@ func (a *App) build(ctx context.Context, cfg *config.Config, store *stats.Store)
 	if err := cfg.ReadyToMine(); err != nil {
 		return nil, err.Error()
 	}
+	// a pool that is enabled but not ready is left out while another one is
+	var sources []pool.Source
 	z := cfg.Pools.Zpool
-	zpool := &pool.Zpool{
-		Wallet:        z.Wallet,
-		Currency:      z.Currency,
-		Worker:        cfg.General.Worker,
-		Region:        z.Region,
-		AlgoSwitching: z.AlgoSwitching,
-		CoinMining:    z.CoinMining,
-		Coins:         z.Coins,
-		ExcludeCoins:  z.ExcludeCoins,
-	}
-	if err := checkPayoutCurrency(ctx, zpool, a.logf); err != nil {
-		if ctx.Err() != nil {
-			return nil, "stopping"
+	if err := cfg.Pools.ZpoolReady(); err == nil {
+		zpool := &pool.Zpool{
+			Wallet:        cfg.Pools.ZpoolWallet(),
+			Currency:      z.Currency,
+			Worker:        cfg.General.Worker,
+			Region:        z.Region,
+			AlgoSwitching: z.AlgoSwitching,
+			CoinMining:    z.CoinMining,
+			Coins:         z.Coins,
+			ExcludeCoins:  z.ExcludeCoins,
 		}
-		return nil, err.Error()
+		if err := checkPayoutCurrency(ctx, zpool, a.logf); err != nil {
+			if ctx.Err() != nil {
+				return nil, "stopping"
+			}
+			return nil, err.Error()
+		}
+		sources = append(sources, zpool)
+	} else if z.Enabled {
+		a.logf("zpool is left out: %v", err)
+	}
+	if err := cfg.Pools.TwoMinersReady(); err == nil {
+		sources = append(sources, a.twoMinersFor(cfg))
+	} else if cfg.Pools.TwoMiners.Enabled {
+		a.logf("2miners is left out: %v", err)
 	}
 
 	var devices []device.Device
@@ -306,7 +368,7 @@ func (a *App) build(ctx context.Context, cfg *config.Config, store *stats.Store)
 
 	deps := engine.Deps{
 		Store:       store,
-		Sources:     []pool.Source{zpool},
+		Sources:     sources,
 		Definitions: a.definitions,
 		Devices:     devices,
 		Launch:      engine.Launch,
@@ -338,7 +400,7 @@ func (a *App) build(ctx context.Context, cfg *config.Config, store *stats.Store)
 		MineAtLoss:        sw.MineAtLoss,
 		PowerPricePerKWh:  power.PricePerKWh,
 		PowerCurrency:     power.Currency,
-		TLS:               z.TLS,
+		PoolTLS:           map[string]bool{"zpool": z.TLS, "2miners": cfg.Pools.TwoMiners.TLS},
 		DataDir:           cfg.General.DataDir,
 		CPUEnabled:        cfg.General.CPU.Enabled,
 		CPUWatts:          cfg.General.CPU.Watts,
@@ -472,6 +534,8 @@ func cloneConfig(c *config.Config) config.Config {
 	out := *c
 	out.Pools.Zpool.Coins = slices.Clone(c.Pools.Zpool.Coins)
 	out.Pools.Zpool.ExcludeCoins = slices.Clone(c.Pools.Zpool.ExcludeCoins)
+	out.Pools.TwoMiners.ExcludeCoins = slices.Clone(c.Pools.TwoMiners.ExcludeCoins)
+	out.Pools.Wallets = maps.Clone(c.Pools.Wallets)
 	out.Algorithms.Only = slices.Clone(c.Algorithms.Only)
 	out.Algorithms.Exclude = slices.Clone(c.Algorithms.Exclude)
 	out.Devices.Exclude = slices.Clone(c.Devices.Exclude)
@@ -512,10 +576,13 @@ func (a *App) SaveConfig(cfg config.Config) error {
 
 func (a *App) Meta(ctx context.Context) api.Meta {
 	meta := api.Meta{
-		Version:    Version,
-		ConfigDir:  a.configDir,
-		Regions:    config.ZpoolRegions,
-		Currencies: a.payoutCurrencies(ctx),
+		Version:   Version,
+		ConfigDir: a.configDir,
+		Regions:   config.ZpoolRegions,
+
+		TwoMinersRegions: config.TwoMinersRegions,
+		TwoMinersCoins:   pool.TwoMinersCoins(),
+		Currencies:       a.payoutCurrencies(ctx),
 	}
 	if abs, err := filepath.Abs(a.configDir); err == nil {
 		meta.ConfigDir = abs
