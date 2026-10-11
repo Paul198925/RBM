@@ -62,7 +62,7 @@ type Sharing struct {
 
 // DefaultShareURL is where the hashrates are exchanged unless the
 // configuration says otherwise.
-const DefaultShareURL = "https://rbm-share.cylvaro.cloud"
+const DefaultShareURL = "https://hashsteer-share.cylvaro.cloud"
 
 // Updates controls what is done about newer releases of the program.
 type Updates struct {

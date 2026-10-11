@@ -122,7 +122,7 @@ func (f *fakeBackend) ResetWatchdog()        { f.watchdogResets++ }
 
 func (f *fakeBackend) Shared() (SharedInfo, error) {
 	fetched := time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC)
-	return SharedInfo{URL: "https://rbm-share.cylvaro.cloud", Download: true, Used: true, Fetched: &fetched, Entries: []SharedHashrate{
+	return SharedInfo{URL: "https://hashsteer-share.cylvaro.cloud", Download: true, Used: true, Fetched: &fetched, Entries: []SharedHashrate{
 		{Device: "GeForce RTX 3060", Miner: "rigel", Version: "1.23.2", Algorithm: "kawpow", Hashrate: 20e6, PowerWatts: 151, Reports: 3, Mine: true, OwnHashrate: 19.8e6},
 		{Device: "GeForce RTX 3060", Miner: "wildrig", Version: "0.51.4", Algorithm: "anime", Hashrate: 28.5e6, PowerWatts: 167, Mine: true},
 		{Device: "GeForce RTX 4070", Miner: "rigel", Version: "1.23.2", Algorithm: "kawpow", Hashrate: 31e6, PowerWatts: 140, Reports: 1},
@@ -497,7 +497,7 @@ func TestWatchdogTotalsAndOfferDetails(t *testing.T) {
 func TestSharedRoutes(t *testing.T) {
 	b := newBackend()
 	body := do(b, request{path: "/api/shared"}).Body.String()
-	for _, want := range []string{`"url":"https://rbm-share.cylvaro.cloud"`, `"device":"GeForce RTX 3060"`, `"reports":3`, `"mine":true`, `"own_hashrate":19800000`, `"upload":false`} {
+	for _, want := range []string{`"url":"https://hashsteer-share.cylvaro.cloud"`, `"device":"GeForce RTX 3060"`, `"reports":3`, `"mine":true`, `"own_hashrate":19800000`, `"upload":false`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("shared misses %s: %s", want, body)
 		}
