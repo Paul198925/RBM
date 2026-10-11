@@ -42,9 +42,10 @@ type Zpool struct {
 	Coins        []string
 	ExcludeCoins []string
 
-	// URL, CurrenciesURL and Client are replaceable for tests.
+	// URL, CurrenciesURL, WalletURL and Client are replaceable for tests.
 	URL           string
 	CurrenciesURL string
+	WalletURL     string
 	Client        *http.Client
 }
 
