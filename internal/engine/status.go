@@ -71,6 +71,8 @@ type CandidateStatus struct {
 	Pool        string `json:"pool"`
 	Coin        string `json:"coin,omitempty"`
 	Benchmarked bool   `json:"benchmarked"`
+	// Estimated says the hashrate was measured elsewhere, not here.
+	Estimated bool `json:"estimated"`
 	// MeasuredSeconds is the mining time the hashrate rests on so far.
 	MeasuredSeconds float64 `json:"measured_seconds"`
 	Hashrate        float64 `json:"hashrate"`
@@ -147,6 +149,7 @@ func (e *Engine) publish(now time.Time) {
 				Pool:            o.offer.Pool,
 				Coin:            o.offer.Coin,
 				Benchmarked:     o.Benchmarked,
+				Estimated:       o.estimated,
 				MeasuredSeconds: o.measured.Seconds(),
 				Hashrate:        o.Hashrate,
 				Price:           o.Price,

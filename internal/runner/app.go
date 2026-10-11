@@ -20,6 +20,7 @@ import (
 	"rbm/internal/config"
 	"rbm/internal/device"
 	"rbm/internal/engine"
+	"rbm/internal/estimate"
 	"rbm/internal/miner"
 	"rbm/internal/pool"
 	"rbm/internal/rates"
@@ -199,6 +200,49 @@ func (a *App) gpuPower(ctx context.Context) (map[int]float64, error) {
 		power[index] = t.PowerWatts
 	}
 	return power, nil
+}
+
+// estimates returns the hashrates that come with the program, nil if they
+// are not wanted or cannot be read.
+func (a *App) estimates(wanted bool) *estimate.Table {
+	if !wanted {
+		return nil
+	}
+	table, err := estimate.Builtin()
+	if err != nil {
+		a.logf("%v", err)
+		return nil
+	}
+	return table
+}
+
+// ExportEstimates writes what this machine has measured to w, in the form
+// estimates are shared in.
+func ExportEstimates(ctx context.Context, cfg *config.Config, w io.Writer) error {
+	definitions, err := miner.Builtin()
+	if err != nil {
+		return err
+	}
+	devices, _ := device.DetectAll(ctx)
+	path := filepath.Join(cfg.General.DataDir, "stats.db")
+	if _, err := os.Stat(path); err != nil {
+		return fmt.Errorf("nothing has been measured yet: %w", err)
+	}
+	store, err := stats.Open(path)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	entries, err := engine.ExportEstimates(store, definitions, devices, time.Duration(cfg.General.Switching.BenchmarkTime))
+	if err != nil {
+		return err
+	}
+	out, err := estimate.Marshal(entries)
+	if err != nil {
+		return err
+	}
+	_, err = w.Write(out)
+	return err
 }
 
 // coinPools makes the coin pools that cfg has ready to mine at.
@@ -426,6 +470,7 @@ func (a *App) build(ctx context.Context, cfg *config.Config, store *stats.Store)
 		BenchmarkTime:     time.Duration(sw.BenchmarkTime),
 		HysteresisPercent: sw.HysteresisPercent,
 		MineAtLoss:        sw.MineAtLoss,
+		Estimates:         a.estimates(sw.UseEstimates),
 		PowerPricePerKWh:  power.PricePerKWh,
 		PowerCurrency:     power.Currency,
 		PoolTLS:           poolTLS,

@@ -15,6 +15,7 @@ import (
 	"unicode"
 
 	"rbm/internal/device"
+	"rbm/internal/estimate"
 	"rbm/internal/miner"
 	"rbm/internal/pool"
 	"rbm/internal/selector"
@@ -62,6 +63,10 @@ type Options struct {
 	TLS     bool
 	PoolTLS map[string]bool
 	DataDir string
+
+	// Estimates are hashrates measured on other machines. They stand in
+	// until this one has measured its own; nil does without them.
+	Estimates *estimate.Table
 
 	// CPUEnabled lets the CPU mine as well.
 	CPUEnabled bool
@@ -182,9 +187,11 @@ type option struct {
 	powerKey string
 	// measured is how much mining time the stored hashrate rests on
 	measured time.Duration
-	def      *miner.Definition
-	algo     miner.Algorithm
-	offer    pool.Offer
+	// estimated says the hashrate is not this machine's own measurement
+	estimated bool
+	def       *miner.Definition
+	algo      miner.Algorithm
+	offer     pool.Offer
 }
 
 // label names the option for logs: "rigel/kawpow at zpool:CLORE".
@@ -605,6 +612,22 @@ func priceKey(o pool.Offer) string {
 	return key
 }
 
+// estimate returns what the devices of g together are expected to do with a
+// miner on an algorithm, going by what others measured with the same model.
+func (e *Engine) estimate(g *group, def *miner.Definition, a miner.Algorithm) (estimate.Entry, bool) {
+	if len(g.devices) == 0 {
+		return estimate.Entry{}, false
+	}
+	entry, ok := e.opts.Estimates.Lookup(g.devices[0].Model, def.Name, a.Name)
+	if !ok {
+		return estimate.Entry{}, false
+	}
+	n := float64(len(g.devices))
+	entry.Hashrate *= n
+	entry.PowerWatts *= n
+	return entry, true
+}
+
 // options lists what group g could mine right now: every permitted miner on
 // every algorithm it supports, once per offer for that algorithm.
 func (e *Engine) options(g *group, now time.Time) ([]option, error) {
@@ -655,9 +678,16 @@ func (e *Engine) options(g *group, now time.Time) ([]option, error) {
 			if ok {
 				base.measured = hashrate.Duration
 			}
-			if ok && hashrate.Duration >= e.opts.BenchmarkTime {
+			guess, guessed := e.estimate(g, def, a)
+			switch {
+			case ok && hashrate.Duration >= e.opts.BenchmarkTime:
 				base.Hashrate = hashrate.Average(stats.Week)
 				base.Benchmarked = true
+			case guessed:
+				// good enough to compare with; if it is mined, it is
+				// measured, and the measurement takes this figure's place
+				base.Hashrate = guess.Hashrate
+				base.Benchmarked, base.estimated = true, true
 			}
 			power, ok, err := e.deps.Store.Load(base.powerKey)
 			if err != nil {
@@ -665,6 +695,8 @@ func (e *Engine) options(g *group, now time.Time) ([]option, error) {
 			}
 			if ok {
 				base.PowerWatts = power.Average(stats.Week)
+			} else if base.estimated {
+				base.PowerWatts = guess.PowerWatts
 			}
 
 			for _, offer := range offers {

@@ -4,6 +4,8 @@ import (
 	"sort"
 	"time"
 
+	"rbm/internal/device"
+	"rbm/internal/estimate"
 	"rbm/internal/miner"
 	"rbm/internal/stats"
 )
@@ -11,6 +13,7 @@ import (
 // The states a benchmark can be in.
 const (
 	BenchOK       = "ok"           // measured
+	BenchEstimate = "estimated"    // not measured here; a figure from another machine stands in
 	BenchOutdated = "outdated"     // measured with another version of the miner program
 	BenchRunning  = "benchmarking" // being measured right now
 	BenchPending  = "pending"      // not measured yet, or not long enough
@@ -116,6 +119,7 @@ func (e *Engine) listBenchmarks(now time.Time) error {
 				}
 
 				done := measured && hashrate.Duration >= e.opts.BenchmarkTime
+				guess, guessed := e.estimate(g, def, a)
 				until, failed := g.disabled[hashKey]
 				switch {
 				case !e.allowed(def, a.Name):
@@ -133,6 +137,12 @@ func (e *Engine) listBenchmarks(now time.Time) error {
 					b.MeasuredVersion = e.versions[hashKey]
 				case done:
 					b.Status = BenchOK
+				case guessed:
+					b.Status = BenchEstimate
+					b.Hashrate = guess.Hashrate
+					if b.PowerWatts == 0 {
+						b.PowerWatts = guess.PowerWatts
+					}
 				case len(e.offersFor(a.Name, now)) == 0:
 					b.Status = BenchNoOffer
 				}
@@ -222,4 +232,51 @@ func (e *Engine) ResetBenchmarks(which string, hashKeys []string) {
 			e.deps.Logf("%d benchmarks were reset", len(keys))
 		}
 	})
+}
+
+// ExportEstimates returns what this machine has measured, per device, in
+// the form estimates are shared in. Only finished measurements count.
+func ExportEstimates(store *stats.Store, definitions map[string]*miner.Definition, devices []device.Device, benchmarkTime time.Duration) ([]estimate.Entry, error) {
+	versions, err := store.Notes(versionNote)
+	if err != nil {
+		return nil, err
+	}
+	var entries []estimate.Entry
+	for _, g := range groupDevices(devices, true) {
+		n := float64(len(g.devices))
+		for _, name := range miner.Names(definitions) {
+			def := definitions[name]
+			if def.Vendor != g.vendor {
+				continue
+			}
+			for _, a := range def.Algorithms {
+				hashKey := stats.HashrateKey(def.Name, g.deviceIDs(), a.Name)
+				hashrate, ok, err := store.Load(hashKey)
+				if err != nil {
+					return nil, err
+				}
+				if !ok || hashrate.Duration < benchmarkTime || hashrate.Average(stats.Week) <= 0 {
+					continue
+				}
+				entry := estimate.Entry{
+					Device:    g.devices[0].Model,
+					Miner:     def.Name,
+					Version:   versions[hashKey],
+					Algorithm: a.Name,
+					Hashrate:  hashrate.Average(stats.Week) / n,
+				}
+				if entry.Version == "" {
+					entry.Version = def.Version
+				}
+				// a CPU's draw is assumed, not measured
+				if power, ok, err := store.Load(powerKeyFor(hashKey)); err != nil {
+					return nil, err
+				} else if ok && g.vendor != miner.VendorCPU {
+					entry.PowerWatts = power.Average(stats.Week) / n
+				}
+				entries = append(entries, entry)
+			}
+		}
+	}
+	return entries, nil
 }

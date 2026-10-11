@@ -311,6 +311,7 @@ function renderDashboard() {
   const running = s.groups.filter(g => g.state !== 'idle');
   const idle = s.groups.filter(g => g.state === 'idle');
   const benched = g => { const c = g.candidates.find(x => x.id === g.running); return c && c.benchmarked ? c.hashrate : 0; };
+  const guessed = g => { const c = g.candidates.find(x => x.id === g.running); return Boolean(c && c.estimated); };
   const miners = dataTable('running', [
     { key: 'miner', label: 'Name' },
     { key: 'pool', label: 'Pool' },
@@ -322,7 +323,7 @@ function renderDashboard() {
     { key: 'power_watts', label: 'Power', num: true, cell: g => fmtWatts(g.power_watts) },
     { key: 'algorithm', label: 'Algo' },
     { key: 'hashrate', label: 'Speed', num: true, cell: g => fmtHash(g.hashrate) },
-    { key: 'benched', label: 'Benched', num: true, value: benched, cell: g => fmtHash(benched(g)) },
+    { key: 'benched', label: 'Benched', num: true, value: benched, cell: g => fmtHash(benched(g)) + (guessed(g) ? '  (est.)' : '') },
     { key: 'shares', label: 'A/R/S', num: true, value: g => g.accepted, cell: g => g.accepted + '/' + g.rejected + '/' + g.invalid },
     { key: 'since', label: 'Active', num: true, value: g => -new Date(g.since).getTime(), cell: g => fmtAgo(g.since) },
   ], running, { empty: s.system.paused ? 'Mining is paused.' : 'No miner is running.', sort: { key: 'name', dir: 1 } });
@@ -504,7 +505,7 @@ function renderMiners() {
   if (!s) return h('div', { class: 'empty' }, 'Loading ...');
   const rows = [];
   for (const g of s.groups) for (const c of g.candidates) rows.push(Object.assign({ group: g, running: c.id === g.running }, c));
-  const status = c => (c.running ? c.group.state : c.benchmarked ? 'measured' : 'needs benchmark');
+  const status = c => (c.running ? c.group.state : c.estimated ? 'estimated' : c.benchmarked ? 'measured' : 'needs benchmark');
   const satPerWatt = c => (c.benchmarked && c.power_watts > 0 ? c.profit_btc_per_day * 1e8 / c.power_watts : 0);
   const t = dataTable('miners', [
     { key: 'miner', label: 'Name' },
@@ -519,8 +520,9 @@ function renderMiners() {
     { key: 'coin', label: 'Coin', cell: c => c.coin || 'pool picks' },
     { key: 'hashrate', label: 'Speed', num: true, cell: c => (c.benchmarked ? fmtHash(c.hashrate) : '') },
     { key: 'fee_percent', label: 'Fee', num: true, cell: c => c.fee_percent + ' %' },
-    { key: 'status', label: 'Status', value: status, filter: ['mining', 'benchmarking', 'measured', 'needs benchmark'],
-      cell: c => h('span', { class: 'badge ' + (c.running ? c.group.state : c.benchmarked ? '' : 'todo') }, status(c)) },
+    { key: 'status', label: 'Status', value: status, filter: ['mining', 'benchmarking', 'measured', 'estimated', 'needs benchmark'],
+      cell: c => h('span', { class: 'badge ' + (c.running ? c.group.state : c.estimated ? 'estimated' : c.benchmarked ? '' : 'todo'),
+        title: c.estimated ? 'The hashrate was measured on another machine with the same card. It is replaced by this machine\'s own once this is mined.' : '' }, status(c) + (c.running && c.estimated ? ', estimated' : '')) },
   ], rows, { empty: s.system.paused ? 'Mining is paused.' : 'Nothing to mine right now.', sort: { key: 'profit_btc_per_day', dir: -1 },
     rowClass: c => (c.running ? 'running' : '') });
   return h('div', {}, h('h1', {}, 'Active Miners'),
@@ -537,6 +539,7 @@ const BENCH_STATUS = {
   'pending': 'not measured yet',
   'failed': 'taken out after failures',
   'no offer': 'the pool pays nothing for it at the moment, so it cannot be measured',
+  'estimated': 'not measured here: the figure comes from another machine with the same card and is replaced once this is mined',
   'no fit': 'the card has too little memory for it',
   'excluded': 'switched off in the configuration',
 };
@@ -804,7 +807,8 @@ function setupGeneral() {
       textField('Round length', 'general.switching.interval', 'How often hashrates are stored and the choice of miner is reconsidered. 30s to 1h, e.g. 1m.'),
       numberField('Hysteresis in percent', 'general.switching.hysteresis_percent', 'Another candidate must earn this much more before the running miner is stopped for it.'),
       textField('Minimum run time', 'general.switching.min_run_time', 'A started miner is left alone for at least this long, e.g. 5m.'),
-      textField('Benchmark time', 'general.switching.benchmark_time', 'Measured mining time a miner needs before its hashrate is trusted, e.g. 3m.')),
+      textField('Benchmark time', 'general.switching.benchmark_time', 'Measured mining time a miner needs before its hashrate is trusted, e.g. 3m.'),
+      boolField('Start from estimates', 'general.switching.use_estimates', 'Where rbm comes with a hashrate that was measured on another machine with the same card, it mines by that figure at once instead of benchmarking first. What is mined is measured, and the measurement replaces the estimate. The same card can be faster or slower here; turn this off to measure everything yourself before anything is mined for profit.')),
     h('div', { class: 'section' }, h('h3', {}, 'CPU'),
       boolField('Mine with the CPU', 'general.cpu.enabled', 'Off by default: it makes the machine slow for everything else, and the GPU miners need some CPU time themselves.'),
       numberField('CPU Mining Threads', 'general.cpu.threads', '0 lets the miner decide.', '1'),

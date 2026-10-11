@@ -80,6 +80,10 @@ type Switching struct {
 	BenchmarkTime Duration `yaml:"benchmark_time" json:"benchmark_time"`
 	// MineAtLoss keeps mining when electricity costs more than is earned.
 	MineAtLoss bool `yaml:"mine_at_loss" json:"mine_at_loss"`
+	// UseEstimates lets hashrates measured on other machines stand in
+	// until this one has measured its own, instead of benchmarking
+	// everything first.
+	UseEstimates bool `yaml:"use_estimates" json:"use_estimates"`
 }
 
 // CPU controls mining with the processor. It is off unless enabled: a
@@ -260,6 +264,7 @@ func Default() *Config {
 				HysteresisPercent: 5,
 				MinRunTime:        Duration(5 * time.Minute),
 				BenchmarkTime:     Duration(3 * time.Minute),
+				UseEstimates:      true,
 			},
 			Memory: Memory{MinFreeRAMGB: 2, ReservedVRAMGB: 0.5},
 			API:    API{Listen: "127.0.0.1:4000"},

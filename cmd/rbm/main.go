@@ -29,6 +29,8 @@ commands:
   devices     list the GPUs and the CPU found on this machine
   pools       list what the enabled pools currently pay, per algorithm and coin
   currencies  list the coins zpool.ca can pay the earnings out in
+  estimates   print what this machine has measured, per device, in the form
+              hashrates are shared in
   mine        run one miner on one algorithm until Ctrl+C, for testing
                 -miner name   miner program (default rigel)
                 -algo name    algorithm (default kawpow)
@@ -71,6 +73,12 @@ func run() error {
 			return err
 		}
 		return listPools(ctx, cfg)
+	case "estimates":
+		cfg, err := loadConfig(*configDir)
+		if err != nil {
+			return err
+		}
+		return runner.ExportEstimates(ctx, cfg, os.Stdout)
 	case "currencies":
 		cfg, err := loadConfig(*configDir)
 		if err != nil {

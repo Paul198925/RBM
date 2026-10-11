@@ -73,7 +73,7 @@ func TestLoadDirReadsEveryFile(t *testing.T) {
 		t.Errorf("general = %+v", g)
 	}
 	wantSw := Switching{Interval: Duration(90 * time.Second), HysteresisPercent: 3, MinRunTime: Duration(10 * time.Minute),
-		BenchmarkTime: Duration(3 * time.Minute), MineAtLoss: true}
+		BenchmarkTime: Duration(3 * time.Minute), MineAtLoss: true, UseEstimates: true}
 	if g.Switching != wantSw || g.CPU != (CPU{Enabled: true, Watts: 125, Threads: 16}) {
 		t.Errorf("switching = %+v, cpu = %+v", g.Switching, g.CPU)
 	}
