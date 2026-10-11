@@ -339,6 +339,7 @@ function renderDashboard() {
 
   return h('div', {},
     h('h1', {}, 'Dashboard'),
+    benchmarkEta(state.benchmarks, Math.round(s.benchmark_seconds), true),
     h('div', { class: 'title' }, h('h2', {}, 'Running Miners on ' + workerName()), pauseButton()),
     miners.el,
     idle.length ? [h('h2', {}, 'Idle'), dataTable('idle', [
@@ -606,7 +607,7 @@ const BENCH_OVERHEAD = 120;
 
 // benchmarkEta says roughly how long the open benchmarks will take. The
 // device groups measure side by side, so the slowest one sets the time.
-function benchmarkEta(all, goal) {
+function benchmarkEta(all, goal, brief) {
   const groups = new Map();
   for (const b of all) {
     if (b.status !== 'pending' && b.status !== 'benchmarking') continue;
@@ -625,7 +626,8 @@ function benchmarkEta(all, goal) {
       ? total + ' benchmarks are open. Mining is paused, so nothing is measured.'
       : 'About ' + fmtDuration(list[0].seconds) + ' until all ' + total + ' open benchmarks are measured.'),
     h('div', { class: 'help' }, list.map(g => g.name + ': ' + g.count + ' to go, about ' + fmtDuration(g.seconds)).join('   ·   ')),
-    h('div', { class: 'help' }, 'A rough figure: it counts ' + Math.round(goal / 60) + ' min of measuring and 2 min of starting per benchmark. Miners that have to be downloaded, build a DAG, wait for memory or fail make it longer. Algorithms without an offer are not counted; they are measured once a pool pays for them.'));
+    brief ? h('div', { class: 'help' }, 'A rough figure. ', h('a', { href: '#/benchmarks' }, 'Benchmarks'), ' has the list.')
+      : h('div', { class: 'help' }, 'A rough figure: it counts ' + Math.round(goal / 60) + ' min of measuring and 2 min of starting per benchmark. Miners that have to be downloaded, build a DAG, wait for memory or fail make it longer. Algorithms without an offer are not counted; they are measured once a pool pays for them.'));
 }
 
 async function resetBenchmarks(body, question) {
@@ -1041,7 +1043,7 @@ const VIEWS = {
 
 // what each page needs besides the status
 const NEEDS = {
-  dashboard: ['devices', 'balances'], devices: ['devices'],
+  dashboard: ['devices', 'balances', 'benchmarks'], devices: ['devices'],
   bestpools: ['offers'], allpools: ['offers'], earnings: ['balances'], payouts: ['balances'], totals: ['totals'],
   benchmarks: ['benchmarks'], activity: ['activity'], console: ['log', 'minerlogs'],
 };
