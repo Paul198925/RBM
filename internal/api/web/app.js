@@ -14,7 +14,7 @@ function h(tag, attrs, ...children) {
     else if (key === 'value') el.value = value;
     else el.setAttribute(key, value);
   }
-  for (const child of children.flat()) {
+  for (const child of children.flat(Infinity)) {
     if (child === null || child === undefined || child === false) continue;
     el.append(child instanceof Node ? child : document.createTextNode(String(child)));
   }
@@ -62,38 +62,112 @@ function fmtBTC(value) {
   return value.toFixed(8);
 }
 
-// fmtPrice shows what a pool pays per day, for the unit of hashrate that
-// gives a readable number.
-function fmtPrice(perHash) {
-  if (!perHash) return '-';
-  let i = 0;
-  let value = perHash;
-  while (value < 1e-7 && i < UNITS.length - 1) { value *= 1000; i++; }
-  return value.toFixed(8) + ' / ' + UNITS[i].replace('/s', '');
-}
-
+function fmtSat(btc) { return btc ? (btc * 1e8).toFixed(2) + ' sat' : '-'; }
 function fmtWatts(value) { return value ? Math.round(value) + ' W' : '-'; }
+function fmtGB(mib) { return (mib / 1024).toFixed(1) + ' GB'; }
+function fmtDate(iso) { return iso && new Date(iso).getFullYear() > 2000 ? new Date(iso).toLocaleString() : '-'; }
+function fmtCoin(value, currency) { return value.toFixed(8).replace(/0+$/, '').replace(/[.]$/, '') + ' ' + currency; }
 
-function fmtAgo(iso) {
-  if (!iso) return '-';
-  let s = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
-  const d = Math.floor(s / 86400); s -= d * 86400;
-  const hrs = Math.floor(s / 3600); s -= hrs * 3600;
-  const m = Math.floor(s / 60);
-  if (d) return d + 'd ' + hrs + 'h';
+function fmtDuration(seconds) {
+  seconds = Math.max(0, Math.round(seconds));
+  const d = Math.floor(seconds / 86400);
+  const hrs = Math.floor((seconds % 86400) / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  if (d) return d + 'd ' + hrs + 'h ' + m + 'm';
   if (hrs) return hrs + 'h ' + m + 'm';
-  return m + 'm';
+  if (m) return m + 'm';
+  return seconds + 's';
 }
+
+// the time since a moment; '' where there is none
+function fmtAgo(iso) { return iso && new Date(iso).getFullYear() > 2000 ? fmtDuration((Date.now() - new Date(iso).getTime()) / 1000) : ''; }
 
 function fmtUntil(iso) {
-  const s = Math.round((new Date(iso).getTime() - Date.now()) / 1000);
-  if (s <= 0) return 'now';
-  const hrs = Math.floor(s / 3600);
-  const m = Math.ceil((s - hrs * 3600) / 60);
-  return hrs ? hrs + 'h ' + m + 'm' : m + 'm';
+  const s = (new Date(iso).getTime() - Date.now()) / 1000;
+  return s <= 0 ? 'now' : fmtDuration(s + 59);
 }
 
-function coinLabel(pool, coin) { return coin ? pool + ' : ' + coin : pool + ' (pool picks the coin)'; }
+// A hash key names miner, devices and algorithm: hashrate/rigel/GPU#00/kawpow
+function parseKey(hashKey) {
+  const parts = hashKey.split('/');
+  return { miner: parts[1] || '', devices: parts[2] || '', algorithm: parts[3] || '' };
+}
+
+// ------------------------------------------------------------ data table
+
+// Every table can be sorted by a click on a column head and filtered by the
+// fields below the heads. What is chosen is kept per table while the page is
+// redrawn with fresh figures.
+const tables = {};
+
+// dataTable builds a table.
+//   columns: { key, label, num, value(row), cell(row), filter, cls(row) }
+//     value gives what is sorted and filtered by (default row[key]),
+//     cell what is shown (default the value),
+//     filter is 'text' (default for text columns), a list of choices, or false.
+//   opts: { sort: {key, dir}, rowClass(row), empty, select: {id(row), set, can(row)} }
+// It returns the element and the rows as shown.
+function dataTable(id, columns, rows, opts) {
+  opts = opts || {};
+  const t = tables[id] || (tables[id] = { sort: opts.sort || { key: columns[0].key, dir: 1 }, filters: {} });
+  const value = (col, row) => (col.value ? col.value(row) : row[col.key]);
+  const norm = v => (v === undefined || v === null ? '' : v);
+
+  let shown = rows.filter(row => columns.every(col => {
+    const f = t.filters[col.key];
+    if (!f) return true;
+    const v = String(norm(value(col, row)));
+    return Array.isArray(col.filter) ? v === f : v.toLowerCase().includes(f.trim().toLowerCase());
+  }));
+  const sortCol = columns.find(c => c.key === t.sort.key);
+  if (sortCol) {
+    shown = shown.slice().sort((a, b) => {
+      const x = norm(value(sortCol, a)), y = norm(value(sortCol, b));
+      const order = typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y), undefined, { numeric: true });
+      return t.sort.dir * order;
+    });
+  }
+
+  const sel = opts.select;
+  const selectable = sel ? shown.filter(r => !sel.can || sel.can(r)).map(sel.id) : [];
+  const head = h('tr', {},
+    sel ? h('th', { class: 'check' }, h('input', { type: 'checkbox', title: 'Select all shown',
+      checked: selectable.length > 0 && selectable.every(k => sel.set.has(k)),
+      onchange: e => { for (const k of selectable) e.target.checked ? sel.set.add(k) : sel.set.delete(k); render(); } })) : null,
+    columns.map(col => h('th', { class: 'sortable' + (col.num ? ' num' : ''), onclick: () => {
+      t.sort = { key: col.key, dir: t.sort.key === col.key ? -t.sort.dir : 1 };
+      render();
+    } }, col.label + (t.sort.key === col.key ? (t.sort.dir > 0 ? '  ▲' : '  ▼') : ''))));
+
+  const hasFilters = columns.some(c => c.filter !== false && (c.filter || !c.num));
+  const filters = hasFilters ? h('tr', { class: 'filters' },
+    sel ? h('th', {}) : null,
+    columns.map(col => {
+      const kind = col.filter === undefined ? (col.num ? false : 'text') : col.filter;
+      if (!kind) return h('th', {});
+      if (Array.isArray(kind)) {
+        return h('th', {}, h('select', { onchange: e => { t.filters[col.key] = e.target.value; render(); } },
+          h('option', { value: '' }, 'all'),
+          kind.map(o => h('option', { value: o, selected: t.filters[col.key] === o }, o))));
+      }
+      return h('th', {}, h('input', { type: 'search', value: t.filters[col.key] || '', 'data-filter': id + ':' + col.key,
+        oninput: e => { t.filters[col.key] = e.target.value; render(); } }));
+    })) : null;
+
+  const body = shown.map(row => h('tr', { class: opts.rowClass ? opts.rowClass(row) : '' },
+    sel ? h('td', { class: 'check' }, !sel.can || sel.can(row) ? h('input', { type: 'checkbox', checked: sel.set.has(sel.id(row)),
+      onchange: e => { e.target.checked ? sel.set.add(sel.id(row)) : sel.set.delete(sel.id(row)); render(); } }) : null) : null,
+    columns.map(col => {
+      const content = col.cell ? col.cell(row) : norm(value(col, row));
+      return h('td', { class: (col.num ? 'num ' : '') + (col.cls ? col.cls(row) : '') }, content === '' ? '-' : content);
+    })));
+
+  const el = rows.length || !opts.empty
+    ? h('div', { class: 'scroll' }, h('table', {}, h('thead', {}, head, filters),
+      h('tbody', {}, body.length ? body : h('tr', {}, h('td', { colspan: String(columns.length + (sel ? 1 : 0)), class: 'help' }, 'Nothing matches the filters.')))))
+    : h('div', { class: 'empty' }, opts.empty);
+  return { el, rows: shown };
+}
 
 // ------------------------------------------------------------------ state
 
@@ -103,40 +177,32 @@ const state = {
   devices: [],
   offers: [],
   config: null,   // as the server has it
-  draft: null,    // what the configuration page is editing
+  draft: null,    // what the setup pages are editing
   meta: null,
-  configTab: 'general',
   log: [],
   minerLogs: [],
   minerLog: { name: '', text: '' },
   balances: { balances: [] },
   activity: [],
+  totals: [],
   benchmarks: [],
   benchSelected: new Set(),
-  benchFilter: { miner: '', algorithm: '', group: '', status: '' },
-  benchSort: { key: 'miner', dir: 1 },
-  offerFilter: '',
   offerMineOnly: true,
 };
 
-const PAGES = { '': 'dashboard', miners: 'miners', benchmarks: 'benchmarks', pools: 'pools', activity: 'activity', config: 'config', logs: 'logs' };
+const PAGES = {
+  '': 'dashboard', console: 'console', devices: 'devices',
+  bestpools: 'bestpools', allpools: 'allpools', earnings: 'earnings', totals: 'totals', payouts: 'payouts',
+  miners: 'miners', benchmarks: 'benchmarks', activity: 'activity', watchdog: 'watchdog',
+  setup: 'setup', setuppools: 'setuppools', setupminers: 'setupminers', setupalgorithms: 'setupalgorithms', setupdevices: 'setupdevices',
+  // names of earlier versions
+  pools: 'allpools', config: 'setup', logs: 'console',
+};
 
 function fiat(btc) {
   const s = state.status;
   if (!s || !s.btc_price || !btc) return '';
   return (btc * s.btc_price).toFixed(2) + ' ' + s.currency;
-}
-
-function fmtGB(mib) { return (mib / 1024).toFixed(1) + ' GB'; }
-
-function fmtDuration(seconds) {
-  seconds = Math.max(0, Math.round(seconds));
-  const d = Math.floor(seconds / 86400);
-  const hrs = Math.floor((seconds % 86400) / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  if (d) return d + 'd ' + hrs + 'h ' + m + 'm';
-  if (hrs) return hrs + 'h ' + m + 'm';
-  return m + 'm';
 }
 
 function totals() {
@@ -148,10 +214,19 @@ function totals() {
   return { profit, power, mining };
 }
 
+function workerName() { return state.config ? state.config.general.worker : ''; }
+function payoutCoin() { return state.config ? state.config.pools.zpool.currency : ''; }
+
 // --------------------------------------------------------------- top bar
 
 function topItem(label, value) {
   return h('div', { class: 'item' }, h('div', { class: 'label' }, label), h('div', { class: 'value' }, value));
+}
+
+function pauseButton() {
+  const paused = state.status.system.paused;
+  return h('button', { class: paused ? 'primary' : 'warn', onclick: () => setPaused(!paused),
+    title: paused ? 'Start the miners again' : 'Stop all miners, keep rbm running' }, paused ? 'Resume' : 'Pause');
 }
 
 function renderTopbar() {
@@ -159,17 +234,14 @@ function renderTopbar() {
   const bar = document.getElementById('topbar');
   if (!s) { bar.replaceChildren(); return; }
   const t = totals();
-  const paused = s.system.paused;
   const memory = s.system.memory;
   bar.replaceChildren(
-    topItem('Profit per day', fmtBTC(t.profit) === '-' ? '-' : fmtBTC(t.profit) + ' BTC' + (fiat(t.profit) ? '  =  ' + fiat(t.profit) : '')),
-    topItem('Power', fmtWatts(t.power)),
-    topItem('Mining', t.mining + ' of ' + s.groups.length + ' groups'),
+    topItem('Total profit', fmtBTC(t.profit) === '-' ? '-' : fmtBTC(t.profit) + ' BTC/day' + (fiat(t.profit) ? '  =  ' + fiat(t.profit) + '/day' : '')),
+    topItem('@Power', fmtWatts(t.power)),
     memory ? topItem('Free memory', fmtGB(memory.commit_free_mib) + ' of ' + fmtGB(memory.commit_limit_mib)) : null,
     topItem('Uptime', fmtDuration((Date.now() - new Date(s.system.started).getTime()) / 1000)),
     h('div', { class: 'spacer' }),
-    h('button', { class: paused ? 'primary' : 'warn', onclick: () => setPaused(!paused),
-      title: paused ? 'Start the miners again' : 'Stop all miners, keep rbm running' }, paused ? 'Resume mining' : 'Pause mining'));
+    pauseButton());
 }
 
 async function setPaused(paused) {
@@ -178,136 +250,238 @@ async function setPaused(paused) {
     toast(paused ? 'Mining is paused' : 'Mining continues');
     state.status.system.paused = paused;
     renderTopbar();
+    render();
     setTimeout(refreshStatus, 1500);
   } catch (e) { toast(e.message, true); }
 }
 
 // ------------------------------------------------------------- dashboard
 
+function deviceColumns(withSelection) {
+  const t = d => d.telemetry || {};
+  const temp = c => (c >= 85 ? 'hot' : c >= 78 ? 'warm' : '');
+  const num = (v, unit) => (v ? Math.round(v) + unit : '');
+  const excluded = new Set(state.config ? state.config.devices.exclude : []);
+  const mines = d => (d.kind === 'cpu' ? Boolean(state.config && state.config.general.cpu.enabled) : !excluded.has(d.id));
+  return [
+    { key: 'id', label: 'Name' },
+    { key: 'vendor', label: 'Vendor', value: d => d.vendor || (d.kind === 'cpu' ? 'CPU' : '') },
+    { key: 'model', label: 'Model' },
+    withSelection ? { key: 'mines', label: 'Mines', value: d => (mines(d) ? 'yes' : 'no'), filter: ['yes', 'no'] } : null,
+    { key: 'mem', label: 'Mem', num: true, value: d => d.memory_mib || 0, cell: d => (d.memory_mib ? Math.round(d.memory_mib / 1024) + ' GB' : d.threads ? d.threads + ' threads' : '') },
+    withSelection ? { key: 'used', label: 'Mem used', num: true, value: d => t(d).memory_used_mib || 0, cell: d => (d.telemetry ? Math.round(t(d).memory_used_mib) + ' MiB' : '') } : null,
+    { key: 'temp', label: '°C', num: true, value: d => t(d).temperature_c || 0, cell: d => num(t(d).temperature_c, ' °C'), cls: d => temp(t(d).temperature_c) },
+    { key: 'max', label: 'max °C', num: true, value: d => d.max_temperature_c || 0, cell: d => num(d.max_temperature_c, ' °C'), cls: d => temp(d.max_temperature_c) },
+    { key: 'fan', label: 'Fan', num: true, value: d => t(d).fan_percent || 0, cell: d => num(t(d).fan_percent, ' %') },
+    withSelection ? { key: 'load', label: 'Load', num: true, value: d => t(d).utilization_percent || 0, cell: d => (d.telemetry ? Math.round(t(d).utilization_percent) + ' %' : '') } : null,
+    { key: 'power', label: 'Power', num: true, value: d => t(d).power_watts || 0, cell: d => num(t(d).power_watts, ' W') },
+    { key: 'clock', label: 'Clock', num: true, value: d => t(d).clock_mhz || 0, cell: d => num(t(d).clock_mhz, ' MHz') },
+    { key: 'memclk', label: 'Memclk', num: true, value: d => t(d).memory_clock_mhz || 0, cell: d => num(t(d).memory_clock_mhz, ' MHz') },
+    // the power limit, as a share of what the card comes with
+    { key: 'pl', label: 'PL', num: true, value: d => (t(d).power_default_watts ? 100 * t(d).power_limit_watts / t(d).power_default_watts : 0),
+      cell: d => (t(d).power_default_watts ? Math.round(100 * t(d).power_limit_watts / t(d).power_default_watts) + ' %' : '') },
+  ].filter(Boolean);
+}
+
+function balanceCards() {
+  const info = state.balances;
+  if (!info.balances.length) {
+    return h('div', { class: 'empty' }, info.error ? 'No balance known: ' + info.error : 'Nothing yet. The pool is asked every ten minutes once a wallet is set.');
+  }
+  return h('div', { class: 'cards' }, info.balances.map(b => h('div', { class: 'card balance' },
+    h('h3', {}, b.pool),
+    h('div', { class: 'main' }, fmtCoin(b.unpaid, b.currency)),
+    h('dl', {},
+      h('dt', {}, 'Confirmed'), h('dd', {}, fmtCoin(b.balance, b.currency)),
+      h('dt', {}, 'Pending'), h('dd', {}, fmtCoin(b.unsold, b.currency)),
+      h('dt', {}, 'Paid in 24 h'), h('dd', {}, fmtCoin(b.paid_24h, b.currency)),
+      h('dt', {}, 'Earned in total'), h('dd', {}, fmtCoin(b.total, b.currency)),
+      h('dt', {}, 'Updated'), h('dd', {}, fmtAgo(b.updated) ? fmtAgo(b.updated) + ' ago' : '-')))));
+}
+
 function renderDashboard() {
   const s = state.status;
   if (!s) return h('div', { class: 'empty' }, 'Loading ...');
 
-  const { profit, power, mining } = totals();
+  const running = s.groups.filter(g => g.state !== 'idle');
+  const idle = s.groups.filter(g => g.state === 'idle');
+  const benched = g => { const c = g.candidates.find(x => x.id === g.running); return c && c.benchmarked ? c.hashrate : 0; };
+  const miners = dataTable('running', [
+    { key: 'miner', label: 'Name' },
+    { key: 'pool', label: 'Pool' },
+    { key: 'coin', label: 'Coin', cell: g => g.coin || 'pool picks' },
+    { key: 'paid', label: 'Paid', value: () => payoutCoin() },
+    { key: 'name', label: 'Devices', cell: g => h('span', { title: g.devices.join(', ') }, g.name) },
+    { key: 'profit', label: 'Profit', num: true, value: g => g.profit_btc_per_day,
+      cell: g => (g.state === 'benchmarking' ? 'benchmarking' : fmtBTC(g.profit_btc_per_day) + (fiat(g.profit_btc_per_day) ? '  (' + fiat(g.profit_btc_per_day) + ')' : '')) },
+    { key: 'power_watts', label: 'Power', num: true, cell: g => fmtWatts(g.power_watts) },
+    { key: 'algorithm', label: 'Algo' },
+    { key: 'hashrate', label: 'Speed', num: true, cell: g => fmtHash(g.hashrate) },
+    { key: 'benched', label: 'Benched', num: true, value: benched, cell: g => fmtHash(benched(g)) },
+    { key: 'shares', label: 'A/R/S', num: true, value: g => g.accepted, cell: g => g.accepted + '/' + g.rejected + '/' + g.invalid },
+    { key: 'since', label: 'Active', num: true, value: g => -new Date(g.since).getTime(), cell: g => fmtAgo(g.since) },
+  ], running, { empty: s.system.paused ? 'Mining is paused.' : 'No miner is running.', sort: { key: 'name', dir: 1 } });
+
   const memory = s.system.memory;
-  const cards = h('div', { class: 'cards' },
-    card('Device groups mining', mining + ' of ' + s.groups.length),
-    card('Expected profit per day', fmtBTC(profit) === '-' ? '-' : fmtBTC(profit) + ' BTC', fiat(profit)),
-    card('Power draw', fmtWatts(power), state.config && state.config.general.power.price_per_kwh > 0 ? '' : 'electricity is not counted'),
+  const system = h('div', { class: 'cards' },
+    memory ? card('RAM', fmtGB(memory.total_mib - memory.free_mib) + ' / ' + fmtGB(memory.total_mib),
+      Math.round(100 * (1 - memory.free_mib / memory.total_mib)) + ' % in use') : null,
+    memory ? card('Memory with page file', fmtGB(memory.commit_limit_mib - memory.commit_free_mib) + ' / ' + fmtGB(memory.commit_limit_mib),
+      fmtGB(memory.commit_free_mib) + ' left for miners to reserve') : null,
     card('Bitcoin price', s.btc_price ? s.btc_price.toFixed(0) + ' ' + s.currency : '-', s.btc_price ? '' : 'not known yet'),
-    memory ? card('Memory left to reserve', fmtGB(memory.commit_free_mib), 'of ' + fmtGB(memory.commit_limit_mib) + ' (RAM and page file); RAM free: ' + fmtGB(memory.free_mib)) : null);
+    card('Electricity', state.config && state.config.general.power.price_per_kwh > 0
+      ? state.config.general.power.price_per_kwh + ' ' + state.config.general.power.currency + ' / kWh' : 'not counted'));
 
-  const groups = s.groups.length
-    ? h('div', { class: 'groups' }, s.groups.map(renderGroup))
-    : h('div', { class: 'empty' }, 'No device group is active.');
-
-  const tempClass = c => 'num' + (c >= 85 ? ' hot' : c >= 78 ? ' warm' : '');
-  const val = (v, unit) => (v ? Math.round(v) + unit : '-');
-  const devices = h('div', { class: 'scroll' }, h('table', {},
-    h('thead', {}, h('tr', {}, h('th', {}, 'ID'), h('th', {}, 'Model'),
-      h('th', { class: 'num' }, 'Temp'), h('th', { class: 'num' }, 'Max'), h('th', { class: 'num' }, 'Fan'),
-      h('th', { class: 'num' }, 'Power'), h('th', { class: 'num' }, 'Limit'), h('th', { class: 'num' }, 'Load'),
-      h('th', { class: 'num' }, 'Memory used'), h('th', { class: 'num' }, 'Clock'), h('th', { class: 'num' }, 'Mem clock'))),
-    h('tbody', {}, state.devices.map(d => {
-      const t = d.telemetry;
-      if (!t) {
-        return h('tr', {}, h('td', {}, d.id), h('td', {}, d.model || '-'),
-          h('td', { class: 'num', colspan: '9' }, d.threads ? d.threads + ' threads' : '-'));
-      }
-      return h('tr', {}, h('td', {}, d.id), h('td', {}, d.model || '-'),
-        h('td', { class: tempClass(t.temperature_c) }, val(t.temperature_c, ' °C')),
-        h('td', { class: tempClass(d.max_temperature_c) }, val(d.max_temperature_c, ' °C')),
-        h('td', { class: 'num' }, val(t.fan_percent, ' %')),
-        h('td', { class: 'num' }, val(t.power_watts, ' W')),
-        h('td', { class: 'num' }, val(t.power_limit_watts, ' W')),
-        h('td', { class: 'num' }, Math.round(t.utilization_percent) + ' %'),
-        h('td', { class: 'num' }, Math.round(t.memory_used_mib) + ' / ' + d.memory_mib + ' MiB'),
-        h('td', { class: 'num' }, val(t.clock_mhz, ' MHz')),
-        h('td', { class: 'num' }, val(t.memory_clock_mhz, ' MHz')));
-    }))));
-
-  return h('div', {}, h('h1', {}, 'Dashboard'), cards, h('h2', {}, 'Device groups'), groups,
-    h('h2', {}, 'Devices'), devices, renderBalances());
-}
-
-function renderBalances() {
-  const info = state.balances;
-  const out = [h('h2', {}, 'Balance at the pool')];
-  if (info.error) out.push(h('p', { class: 'help' }, 'Could not be updated: ' + info.error));
-  if (!info.balances.length) {
-    out.push(h('div', { class: 'empty' }, info.error ? 'No balance known.' : 'Nothing yet. The pool is asked every ten minutes once a wallet is set.'));
-    return out;
-  }
-  for (const b of info.balances) {
-    const amount = v => v.toFixed(8).replace(/0+$/, '').replace(/[.]$/, '') + ' ' + b.currency;
-    out.push(h('div', { class: 'cards' },
-      card('Unpaid at ' + b.pool, amount(b.unpaid), 'confirmed ' + amount(b.balance) + ', not yet exchanged ' + amount(b.unsold)),
-      card('Paid in the last 24 hours', amount(b.paid_24h)),
-      card('Earned in total', amount(b.total), new Date(b.updated).getFullYear() > 2000 ? 'updated ' + fmtAgo(b.updated) + ' ago' : '')));
-    if (b.payouts.length) {
-      out.push(h('h2', {}, 'Payouts', h('small', {}, b.pool)));
-      out.push(h('div', { class: 'scroll' }, h('table', {},
-        h('thead', {}, h('tr', {}, h('th', {}, 'Date'), h('th', { class: 'num' }, 'Amount'), h('th', {}, 'Transaction'))),
-        h('tbody', {}, b.payouts.slice(0, 20).map(p => h('tr', {},
-          h('td', {}, new Date(p.time).toLocaleString()),
-          h('td', { class: 'num' }, amount(p.amount)),
-          h('td', {}, p.tx)))))));
-    }
-  }
-  return out;
-}
-
-// -------------------------------------------------------------- activity
-
-function renderActivity() {
-  const runs = state.activity;
-  const head = [h('h1', {}, 'Activity'),
-    h('p', { class: 'help' }, 'Every run of a miner program in the last three days, newest first. "Earned" is an estimate from the measured hashrate and the pool\'s price at the time, not what the pool has credited.'),
-    h('div', { class: 'toolbar' }, h('a', { class: 'button', href: '/api/activity.csv' }, 'Download as CSV'),
-      h('span', { class: 'help' }, runs.length + ' runs'))];
-  if (!runs.length) return h('div', {}, head, h('div', { class: 'empty' }, 'No miner has finished a run yet.'));
-
-  const rows = runs.map(r => {
-    const minutes = (new Date(r.ended) - new Date(r.started)) / 60000;
-    const sat = r.earned_btc * 1e8;
-    return h('tr', {},
-      h('td', {}, h('span', { class: 'badge ' + r.end.replace(/ /g, '') }, r.end)),
-      h('td', {}, new Date(r.started).toLocaleString()),
-      h('td', { class: 'num' }, minutes.toFixed(1)),
-      h('td', {}, r.group), h('td', {}, r.miner),
-      h('td', {}, r.algorithm + (r.benchmark ? '  (benchmark)' : '')),
-      h('td', {}, r.coin ? r.pool + ' : ' + r.coin : r.pool),
-      h('td', { class: 'num' }, fmtHash(r.hashrate)),
-      h('td', { class: 'num' }, sat ? sat.toFixed(2) + ' sat' : '-'),
-      h('td', { class: 'num' }, r.energy_kwh ? r.energy_kwh.toFixed(3) + ' kWh' : '-'),
-      h('td', { class: 'num' }, r.energy_kwh > 0.0005 && sat ? (sat / r.energy_kwh).toFixed(0) : '-'),
-      h('td', { class: 'num' }, r.accepted + ' / ' + r.rejected));
-  });
-  return h('div', {}, head, h('div', { class: 'scroll' }, h('table', {},
-    h('thead', {}, h('tr', {}, h('th', {}, 'End'), h('th', {}, 'Started'), h('th', { class: 'num' }, 'Minutes'),
-      h('th', {}, 'Group'), h('th', {}, 'Miner'), h('th', {}, 'Algorithm'), h('th', {}, 'Pool : coin'),
-      h('th', { class: 'num' }, 'Hashrate'), h('th', { class: 'num' }, 'Earned'), h('th', { class: 'num' }, 'Energy'),
-      h('th', { class: 'num' }, 'sat/kWh'), h('th', { class: 'num' }, 'Shares ok / bad'))),
-    h('tbody', {}, rows))));
+  return h('div', {},
+    h('h1', {}, 'Dashboard'),
+    h('div', { class: 'title' }, h('h2', {}, 'Running Miners on ' + workerName()), pauseButton()),
+    miners.el,
+    idle.length ? [h('h2', {}, 'Idle'), dataTable('idle', [
+      { key: 'name', label: 'Devices', cell: g => h('span', { title: g.devices.join(', ') }, g.name), filter: false },
+      { key: 'reason', label: 'Why', filter: false, cls: () => 'wrap' },
+    ], idle).el] : null,
+    h('h2', {}, 'Device Status'), dataTable('devstatus', deviceColumns(false).map(c => Object.assign({ filter: false }, c)), state.devices).el,
+    h('h2', {}, 'System Information'), system,
+    h('h2', {}, 'Balances'),
+    state.balances.error && state.balances.balances.length ? h('p', { class: 'help' }, 'Could not be updated: ' + state.balances.error) : null,
+    balanceCards());
 }
 
 function card(label, value, sub) {
   return h('div', { class: 'card' }, h('div', { class: 'label' }, label), h('div', { class: 'value' }, value), sub ? h('div', { class: 'sub' }, sub) : null);
 }
 
-function renderGroup(g) {
-  const idle = g.state === 'idle';
-  return h('div', { class: 'group' },
-    h('header', {}, h('strong', {}, g.name), h('span', { class: 'badge ' + g.state }, g.state)),
-    h('div', { class: 'devices' }, g.devices.join(', ')),
-    idle ? null : h('div', { class: 'what' }, h('b', {}, g.algorithm), ' with ', h('b', {}, g.miner), ' at ', coinLabel(g.pool, g.coin)),
-    idle ? null : h('dl', {},
-      h('dt', {}, 'Hashrate'), h('dd', {}, fmtHash(g.hashrate)),
-      h('dt', {}, 'Power'), h('dd', {}, fmtWatts(g.power_watts)),
-      h('dt', {}, 'Shares (ok / rejected / invalid)'), h('dd', {}, g.accepted + ' / ' + g.rejected + ' / ' + g.invalid),
-      h('dt', {}, 'Profit per day'), h('dd', {}, g.state === 'benchmarking' ? 'measuring' : fmtBTC(g.profit_btc_per_day) + ' BTC' + (fiat(g.profit_btc_per_day) ? '  =  ' + fiat(g.profit_btc_per_day) : '')),
-      h('dt', {}, 'Running for'), h('dd', {}, fmtAgo(g.since))),
-    h('div', { class: 'reason' }, g.reason || ''));
+// --------------------------------------------------------------- devices
+
+function renderDevices() {
+  return h('div', {}, h('h1', {}, 'Devices'),
+    h('p', { class: 'lead' }, 'The devices rbm found. Which of them mine is set under Setup Devices.'),
+    dataTable('devices', deviceColumns(true), state.devices, { empty: 'No device was found.' }).el);
+}
+
+// ----------------------------------------------------------------- pools
+
+function minedAlgorithms() {
+  const set = new Set();
+  for (const m of (state.meta ? state.meta.miners : [])) for (const a of m.algorithms) set.add(a);
+  return set;
+}
+
+function poolColumns(withAction) {
+  const excluded = new Set(state.config ? state.config.pools.zpool.exclude_coins : []);
+  const ratio = o => (o.actual_24h > 0 && o.price_24h > 0 ? o.actual_24h / o.price_24h : 0);
+  return [
+    { key: 'algorithm', label: 'Algorithm' },
+    { key: 'pool', label: 'Name' },
+    { key: 'coin', label: 'Coin', cell: o => (o.coin ? h('span', { title: o.coin_name }, o.coin) : 'pool picks') },
+    { key: 'price', label: 'BTC/GH/Day', num: true, cell: o => (o.price * 1e9).toFixed(10) },
+    // what the pool really paid over a day against what it estimated
+    { key: 'ratio', label: 'Act/Est', num: true, value: ratio, cell: o => (ratio(o) ? ratio(o).toFixed(3) : '') },
+    { key: 'hashrate', label: 'Hashrate', num: true, cell: o => fmtHash(o.hashrate) },
+    { key: 'workers', label: 'Workers', num: true },
+    { key: 'last', label: 'Last (min)', num: true, value: o => o.last_block_seconds || 0, cell: o => (o.last_block_seconds ? (o.last_block_seconds / 60).toFixed(1) : '') },
+    { key: 'blocks_24h', label: 'Blocks/24h', num: true, cell: o => o.blocks_24h || '' },
+    { key: 'fee_percent', label: 'Fee', num: true, cell: o => o.fee_percent + ' %' },
+    { key: 'host', label: 'Host', cell: o => (o.host ? o.host + ':' + o.port : ''), cls: () => 'mono' },
+    { key: 'updated', label: 'Last Updated', filter: false, value: o => new Date(o.updated).getTime(), cell: o => (fmtAgo(o.updated) ? fmtAgo(o.updated) + ' ago' : '') },
+    withAction ? { key: 'action', label: '', filter: false, value: () => '',
+      cell: o => (o.coin && !excluded.has(o.coin) ? h('button', { class: 'small', title: 'Never mine this coin on its own', onclick: () => excludeCoin(o.coin) }, 'Exclude') : '') } : null,
+  ].filter(Boolean);
+}
+
+function poolToolbar(count) {
+  return h('div', { class: 'toolbar' },
+    h('label', {}, h('input', { type: 'checkbox', checked: state.offerMineOnly,
+      onchange: e => { state.offerMineOnly = e.target.checked; render(); } }), ' only algorithms a miner program supports'),
+    h('span', { class: 'help' }, count + ' shown'));
+}
+
+function offersToShow() {
+  const mine = minedAlgorithms();
+  return state.offers.filter(o => !state.offerMineOnly || mine.has(o.algorithm));
+}
+
+function renderBestPools() {
+  const best = new Map();
+  for (const o of offersToShow()) if (!best.has(o.algorithm) || o.price > best.get(o.algorithm).price) best.set(o.algorithm, o);
+  const t = dataTable('bestpools', poolColumns(false), Array.from(best.values()),
+    { empty: 'No offers yet. They appear once the engine has asked the pool.' });
+  return h('div', {}, h('h1', {}, 'Best Pools'),
+    h('p', { class: 'lead' }, 'For each algorithm, the offer that pays most right now. A miner is not sent there blindly: what it earns depends on its own speed, and the price counts as an hourly average.'),
+    poolToolbar(t.rows.length), t.el);
+}
+
+function renderAllPools() {
+  const t = dataTable('allpools', poolColumns(true), offersToShow(),
+    { empty: 'No offers yet. They appear once the engine has asked the pool.' });
+  return h('div', {}, h('h1', {}, 'All Pools'),
+    h('p', { class: 'lead' }, 'Everything zpool.ca pays for right now. "Pool picks" is the pool\'s own port for an algorithm, where it switches between coins itself; the other rows mine exactly one coin. Coins nobody is mining at the pool are not offered.'),
+    poolToolbar(t.rows.length), t.el);
+}
+
+async function excludeCoin(coin) {
+  if (!confirm('Never mine ' + coin + ' as a single coin? You can undo this under Setup Pools.')) return;
+  try {
+    const cfg = JSON.parse(JSON.stringify(state.config));
+    cfg.pools.zpool.exclude_coins.push(coin);
+    await api('/api/config', { method: 'PUT', body: cfg });
+    toast(coin + ' excluded');
+    await loadConfig();
+    render();
+  } catch (e) { toast(e.message, true); }
+}
+
+function renderEarnings() {
+  const info = state.balances;
+  const amount = key => ({ key, label: { balance: 'Balance', unsold: 'Pending', unpaid: 'Total', paid_24h: 'Paid 24h', total: 'Earned' }[key], num: true,
+    cell: b => fmtCoin(b[key], b.currency) });
+  return h('div', {}, h('h1', {}, 'Pool Earnings'),
+    h('p', { class: 'lead' }, 'What the pools hold for your wallets, as they report it. "Balance" is confirmed and waits for the next payout, "Pending" is mined but not yet exchanged into the payout coin.'),
+    info.error ? h('p', { class: 'help' }, 'Could not be updated: ' + info.error) : null,
+    dataTable('earnings', [
+      { key: 'pool', label: 'Name' }, { key: 'currency', label: 'Currency' },
+      amount('balance'), amount('unsold'), amount('unpaid'), amount('paid_24h'), amount('total'),
+      { key: 'updated', label: 'Last Updated', filter: false, value: b => new Date(b.updated).getTime(), cell: b => fmtDate(b.updated) },
+    ], info.balances, { empty: 'Nothing yet. The pool is asked every ten minutes once a wallet is set.' }).el);
+}
+
+function renderPayouts() {
+  const rows = [];
+  for (const b of state.balances.balances) for (const p of b.payouts) rows.push(Object.assign({ pool: b.pool, currency: b.currency }, p));
+  return h('div', {}, h('h1', {}, 'Pool Payouts'),
+    h('p', { class: 'lead' }, 'The payouts the pools report for your wallets.'),
+    dataTable('payouts', [
+      { key: 'time', label: 'Date', filter: false, value: p => new Date(p.time).getTime(), cell: p => fmtDate(p.time) },
+      { key: 'amount', label: 'Amount', num: true, cell: p => p.amount.toFixed(10) },
+      { key: 'currency', label: 'Currency' },
+      { key: 'pool', label: 'Name' },
+      { key: 'tx', label: 'Txid', cls: () => 'mono' },
+    ], rows, { empty: 'No payout is known yet.', sort: { key: 'time', dir: -1 } }).el);
+}
+
+function renderTotals() {
+  const s = state.status;
+  const price = state.config ? state.config.general.power.price_per_kwh : 0;
+  // electricity in BTC, with today's bitcoin price
+  const cost = t => (price > 0 && s && s.btc_price ? t.energy_kwh * price / s.btc_price : 0);
+  const rows = state.totals.slice();
+  if (rows.length > 1) {
+    rows.push(rows.reduce((sum, t) => ({ pool: 'TOTAL', runs: sum.runs + t.runs, earned_btc: sum.earned_btc + t.earned_btc,
+      energy_kwh: sum.energy_kwh + t.energy_kwh, minutes: sum.minutes + t.minutes,
+      started: sum.started < t.started ? sum.started : t.started, updated: sum.updated > t.updated ? sum.updated : t.updated })));
+  }
+  return h('div', {}, h('h1', {}, 'Pool Calculated Totals'),
+    h('p', { class: 'lead' }, 'What the miner runs of the last 30 days add up to. "Profit" is estimated from measured hashrate and pool price; compare it with what the pool really paid (Pool Earnings) to see how far its estimates can be trusted.'),
+    dataTable('totals', [
+      { key: 'pool', label: 'Poolname', filter: false },
+      { key: 'earned_btc', label: 'Profit', num: true, cell: t => fmtBTC(t.earned_btc) + (fiat(t.earned_btc) ? '  (' + fiat(t.earned_btc) + ')' : '') },
+      { key: 'cost', label: 'Cost', num: true, value: cost, cell: t => (cost(t) ? fmtBTC(cost(t)) + '  (' + fiat(cost(t)) + ')' : '') },
+      { key: 'energy_kwh', label: 'Power', num: true, cell: t => t.energy_kwh.toFixed(3) + ' kWh' },
+      { key: 'minutes', label: 'Minutes', num: true, cell: t => t.minutes.toFixed(2) },
+      { key: 'runs', label: 'Runs', num: true },
+      { key: 'started', label: 'Started', filter: false, cell: t => fmtDate(t.started) },
+      { key: 'updated', label: 'Updated', filter: false, cell: t => fmtDate(t.updated) },
+    ], rows, { empty: 'No miner has finished a run yet.' }).el);
 }
 
 // ---------------------------------------------------------------- miners
@@ -315,67 +489,30 @@ function renderGroup(g) {
 function renderMiners() {
   const s = state.status;
   if (!s) return h('div', { class: 'empty' }, 'Loading ...');
-  const out = [h('h1', {}, 'Miners'),
-    h('p', { class: 'help' }, 'Everything each device group could mine right now, best first. A miner on an algorithm is measured once; that benchmark counts for every coin and pool.')];
-  if (!s.groups.length) out.push(h('div', { class: 'empty' }, 'Nothing is running.'));
-
-  for (const g of s.groups) {
-    out.push(h('h2', {}, g.name, h('small', {}, g.devices.join(', '))));
-    const rows = g.candidates.slice().sort((a, b) =>
-      (b.benchmarked - a.benchmarked) || (b.profit_btc_per_day - a.profit_btc_per_day) || a.id.localeCompare(b.id));
-    if (!rows.length) {
-      out.push(h('div', { class: 'empty' }, g.reason || 'No candidates.'));
-    } else {
-      out.push(h('div', { class: 'scroll' }, h('table', {},
-        h('thead', {}, h('tr', {},
-          h('th', {}, 'Miner'), h('th', {}, 'Algorithm'), h('th', {}, 'Pool : coin'), h('th', {}, 'State'),
-          h('th', { class: 'num' }, 'Hashrate'), h('th', { class: 'num' }, 'Power'), h('th', { class: 'num' }, 'Fee'),
-          h('th', { class: 'num' }, 'Pool pays per day'), h('th', { class: 'num' }, 'Revenue BTC/day'), h('th', { class: 'num' }, 'Profit BTC/day'), h('th', {}, ''))),
-        h('tbody', {}, rows.map(c => {
-          const running = c.id === g.running;
-          const stateBadge = running ? h('span', { class: 'badge ' + g.state }, g.state)
-            : c.benchmarked ? h('span', { class: 'badge' }, 'measured') : h('span', { class: 'badge todo' }, 'needs benchmark');
-          // a benchmark keeps what it has measured across restarts
-          const progress = c.benchmarked ? '' : '  ' + Math.round(c.measured_seconds) + ' of ' + Math.round(s.benchmark_seconds) + ' s';
-          return h('tr', { class: running ? 'running' : '' },
-            h('td', {}, c.miner), h('td', {}, c.algorithm), h('td', {}, c.coin ? c.pool + ' : ' + c.coin : c.pool), h('td', {}, stateBadge, progress),
-            h('td', { class: 'num' }, c.benchmarked ? fmtHash(c.hashrate) : '-'),
-            h('td', { class: 'num' }, fmtWatts(c.power_watts)),
-            h('td', { class: 'num' }, c.fee_percent + ' %'),
-            h('td', { class: 'num' }, fmtPrice(c.price)),
-            h('td', { class: 'num' }, c.benchmarked ? fmtBTC(c.revenue_btc_per_day) : '-'),
-            h('td', { class: 'num ' + (c.profit_btc_per_day > 0 ? 'pos' : c.profit_btc_per_day < 0 ? 'neg' : '') }, c.benchmarked ? fmtBTC(c.profit_btc_per_day) : '-'),
-            h('td', {}, c.benchmarked ? h('button', { class: 'small', title: 'Forget the measured hashrate and measure again', onclick: () => resetBenchmark(c.hash_key) }, 'Benchmark again') : null));
-        })))));
-    }
-    if (g.disabled.length) {
-      out.push(h('h2', {}, 'Taken out after failures', h('small', {}, g.name)));
-      out.push(h('div', { class: 'scroll' }, h('table', {},
-        h('thead', {}, h('tr', {}, h('th', {}, 'Miner / devices / algorithm'), h('th', {}, 'Tried again in'), h('th', {}, ''))),
-        h('tbody', {}, g.disabled.map(d => h('tr', {},
-          h('td', {}, d.hash_key.replace(/^hashrate\//, '')),
-          h('td', {}, fmtUntil(d.until)),
-          h('td', {}, h('button', { class: 'small', onclick: () => enableCandidate(d.hash_key) }, 'Try again now'))))))));
-    }
-  }
-  return h('div', {}, out);
-}
-
-async function resetBenchmark(hashKey) {
-  if (!confirm('Forget the measured hashrate of ' + hashKey.replace(/^hashrate\//, '') + ' and benchmark it again?')) return;
-  try {
-    await api('/api/benchmarks/reset', { method: 'POST', body: { hash_key: hashKey } });
-    toast('Benchmark will be repeated');
-    setTimeout(refreshStatus, 1500);
-  } catch (e) { toast(e.message, true); }
-}
-
-async function enableCandidate(hashKey) {
-  try {
-    await api('/api/candidates/enable', { method: 'POST', body: { hash_key: hashKey } });
-    toast('Enabled again');
-    setTimeout(refreshStatus, 1500);
-  } catch (e) { toast(e.message, true); }
+  const rows = [];
+  for (const g of s.groups) for (const c of g.candidates) rows.push(Object.assign({ group: g, running: c.id === g.running }, c));
+  const status = c => (c.running ? c.group.state : c.benchmarked ? 'measured' : 'needs benchmark');
+  const satPerWatt = c => (c.benchmarked && c.power_watts > 0 ? c.profit_btc_per_day * 1e8 / c.power_watts : 0);
+  const t = dataTable('miners', [
+    { key: 'miner', label: 'Name' },
+    { key: 'devices', label: 'Devices', value: c => c.group.name, cell: c => h('span', { title: c.group.devices.join(', ') }, c.group.name) },
+    { key: 'profit_btc_per_day', label: 'Profit', num: true, cell: c => (c.benchmarked ? fmtBTC(c.profit_btc_per_day) : ''),
+      cls: c => (c.profit_btc_per_day > 0 ? 'pos' : c.profit_btc_per_day < 0 ? 'neg' : '') },
+    { key: 'revenue_btc_per_day', label: 'Revenue', num: true, cell: c => (c.benchmarked ? fmtBTC(c.revenue_btc_per_day) : '') },
+    { key: 'power_watts', label: 'Power', num: true, cell: c => fmtWatts(c.power_watts) },
+    { key: 'satw', label: 'sat/W', num: true, value: satPerWatt, cell: c => (satPerWatt(c) ? satPerWatt(c).toFixed(2) : '') },
+    { key: 'algorithm', label: 'Algorithm' },
+    { key: 'pool', label: 'Pool' },
+    { key: 'coin', label: 'Coin', cell: c => c.coin || 'pool picks' },
+    { key: 'hashrate', label: 'Speed', num: true, cell: c => (c.benchmarked ? fmtHash(c.hashrate) : '') },
+    { key: 'fee_percent', label: 'Fee', num: true, cell: c => c.fee_percent + ' %' },
+    { key: 'status', label: 'Status', value: status, filter: ['mining', 'benchmarking', 'measured', 'needs benchmark'],
+      cell: c => h('span', { class: 'badge ' + (c.running ? c.group.state : c.benchmarked ? '' : 'todo') }, status(c)) },
+  ], rows, { empty: s.system.paused ? 'Mining is paused.' : 'Nothing to mine right now.', sort: { key: 'profit_btc_per_day', dir: -1 },
+    rowClass: c => (c.running ? 'running' : '') });
+  return h('div', {}, h('h1', {}, 'Active Miners'),
+    h('p', { class: 'lead' }, 'Everything the device groups could mine right now, with what it would bring in BTC per day. The running ones are highlighted. Speed and power come from the benchmarks; a figure counts for every coin and pool.'),
+    t.el);
 }
 
 // ------------------------------------------------------------ benchmarks
@@ -391,98 +528,63 @@ const BENCH_STATUS = {
   'excluded': 'switched off in the configuration',
 };
 
-function benchRows() {
-  const f = state.benchFilter;
-  const has = (value, needle) => !needle || value.toLowerCase().includes(needle.trim().toLowerCase());
-  const { key, dir } = state.benchSort;
-  return state.benchmarks
-    .filter(b => has(b.miner, f.miner) && has(b.algorithm, f.algorithm) && has(b.group, f.group) && (!f.status || b.status === f.status))
-    .sort((a, b) => {
-      const x = a[key] === undefined || a[key] === null ? '' : a[key];
-      const y = b[key] === undefined || b[key] === null ? '' : b[key];
-      const order = typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y));
-      return dir * order || a.hash_key.localeCompare(b.hash_key);
-    });
-}
-
 function renderBenchmarks() {
   const all = state.benchmarks;
   const count = status => all.filter(b => b.status === status).length;
   // only what was measured or has failed can be measured again
   const resettable = b => b.measured_seconds > 0 || b.status === 'failed';
   const measured = all.filter(resettable).length;
+  const goal = state.status ? Math.round(state.status.benchmark_seconds) : 0;
 
   const action = (title, text, label, cls, n, run) => h('div', { class: 'action' },
     h('h3', {}, title), h('p', {}, text),
     h('div', { class: 'go' }, h('button', { class: cls, disabled: n === 0, onclick: run }, label + (n ? '  (' + n + ')' : ''))));
   const actions = h('div', { class: 'actions' },
-    action('Benchmark updated miners',
+    action('Benchmark Updated Miners',
       'Forget the figures that were measured with an older version of a miner program than the one installed now. A new version can be faster or slower.',
-      'Benchmark updated miners', 'primary', count('outdated'),
+      'Benchmark Updated Miners', 'primary', count('outdated'),
       () => resetBenchmarks({ which: 'outdated' }, 'Measure the ' + count('outdated') + ' benchmarks of updated miners again?')),
-    action('Benchmark failed miners',
+    action('Benchmark Failed Miners',
       'Let the miners back in that were taken out after crashes or a benchmark without hashrate, and measure them again. Watch them: what failed once may fail again.',
-      'Benchmark failed miners', 'primary', count('failed'),
+      'Benchmark Failed Miners', 'primary', count('failed'),
       () => resetBenchmarks({ which: 'failed' }, 'Try the ' + count('failed') + ' failed benchmarks again?')),
-    action('Reset all benchmarks',
+    action('Reset All Benchmarks',
       'Forget everything that was measured. Do this after changing hardware, drivers or overclocking. Measuring everything again takes hours, and until then nothing is mined for profit.',
-      'Benchmark all miners', 'danger', measured,
+      'Benchmark All Miners', 'danger', measured,
       () => resetBenchmarks({ which: 'all' }, 'Really forget all ' + measured + ' measurements? Measuring everything again takes hours.')));
 
-  const rows = benchRows();
-  const visible = rows.filter(resettable).map(b => b.hash_key);
-  const selected = visible.filter(k => state.benchSelected.has(k));
-  const sortable = (label, key, cls) => h('th', { class: 'sortable ' + (cls || ''), onclick: () => {
-    state.benchSort = { key, dir: state.benchSort.key === key ? -state.benchSort.dir : 1 };
-    render();
-  } }, label + (state.benchSort.key === key ? (state.benchSort.dir > 0 ? '  ▲' : '  ▼') : ''));
-  const filter = key => h('input', { type: 'search', value: state.benchFilter[key], 'data-filter': key,
-    oninput: e => { state.benchFilter[key] = e.target.value; rerenderKeepingFocus(e.target); } });
+  const statusText = b => {
+    if (b.status === 'pending' && b.measured_seconds > 0) return 'pending  ' + Math.round(b.measured_seconds) + ' of ' + goal + ' s';
+    if (b.status === 'benchmarking') return 'benchmarking  ' + Math.round(b.measured_seconds) + ' of ' + goal + ' s';
+    if (b.status === 'failed' && b.failed_until) return 'failed, again in ' + fmtUntil(b.failed_until);
+    if (b.status === 'outdated') return 'outdated (v' + b.measured_version + ')';
+    return b.status;
+  };
+  const t = dataTable('benchmarks', [
+    { key: 'miner', label: 'Name', cell: b => [b.miner, h('small', { class: 'help' }, '  ' + b.version)] },
+    { key: 'algorithm', label: 'Algorithm' },
+    { key: 'group', label: 'Device', cell: b => h('span', { title: b.devices.join(', ') }, b.group) },
+    { key: 'hashrate', label: 'Speed', num: true, cell: b => fmtHash(b.hashrate) },
+    { key: 'rejected_percent', label: 'Rejected', num: true, value: b => (b.rejected_percent === undefined ? -1 : b.rejected_percent),
+      cell: b => (b.rejected_percent === undefined ? '' : b.rejected_percent.toFixed(2).replace(/[.]?0+$/, '') + ' %'), cls: b => (b.rejected_percent > 5 ? 'hot' : '') },
+    { key: 'power_watts', label: 'Power', num: true, cell: b => fmtWatts(b.power_watts) },
+    { key: 'status', label: 'Status', filter: Object.keys(BENCH_STATUS),
+      cell: b => h('span', { class: 'badge ' + b.status.replace(/ /g, ''), title: BENCH_STATUS[b.status] || '' }, statusText(b)) },
+    { key: 'updated', label: 'Date', filter: false, value: b => (b.updated ? new Date(b.updated).getTime() : 0), cell: b => fmtDate(b.updated) },
+    { key: 'log', label: 'Log', filter: false, value: b => b.log || '',
+      cell: b => (b.log ? h('a', { href: '#/console', title: b.log, onclick: () => { loadMinerLog(b.log); } }, 'log') : '') },
+  ], all, { empty: 'Nothing yet. The list appears with the first round of the engine.',
+    rowClass: b => (b.status === 'benchmarking' ? 'running' : ''),
+    select: { id: b => b.hash_key, set: state.benchSelected, can: resettable } });
 
-  const table = h('div', { class: 'scroll' }, h('table', {},
-    h('thead', {},
-      h('tr', {},
-        h('th', { class: 'check' }, h('input', { type: 'checkbox', title: 'Select all shown',
-          checked: visible.length > 0 && selected.length === visible.length,
-          onchange: e => { for (const k of visible) e.target.checked ? state.benchSelected.add(k) : state.benchSelected.delete(k); render(); } })),
-        sortable('Name', 'miner'), sortable('Algorithm', 'algorithm'), sortable('Device', 'group'),
-        sortable('Speed', 'hashrate', 'num'), h('th', { class: 'num' }, 'Rejected'), sortable('Power', 'power_watts', 'num'),
-        sortable('Status', 'status'), sortable('Date', 'updated'), h('th', {}, 'Log')),
-      h('tr', { class: 'filters' },
-        h('th', {}), h('th', {}, filter('miner')), h('th', {}, filter('algorithm')), h('th', {}, filter('group')),
-        h('th', {}), h('th', {}), h('th', {}),
-        h('th', {}, h('select', { onchange: e => { state.benchFilter.status = e.target.value; render(); } },
-          h('option', { value: '' }, 'all'),
-          Object.keys(BENCH_STATUS).map(s => h('option', { value: s, selected: state.benchFilter.status === s }, s)))),
-        h('th', {}), h('th', {}))),
-    h('tbody', {}, rows.map(b => {
-      let status = b.status;
-      if (b.status === 'pending' && b.measured_seconds > 0) status = 'pending  ' + Math.round(b.measured_seconds) + ' of ' + Math.round(state.status.benchmark_seconds) + ' s';
-      if (b.status === 'benchmarking') status = 'benchmarking  ' + Math.round(b.measured_seconds) + ' of ' + Math.round(state.status.benchmark_seconds) + ' s';
-      if (b.status === 'failed' && b.failed_until) status = 'failed, again in ' + fmtUntil(b.failed_until);
-      if (b.status === 'outdated') status = 'outdated (v' + b.measured_version + ')';
-      return h('tr', { class: b.status === 'benchmarking' ? 'running' : '' },
-        h('td', { class: 'check' }, resettable(b) ? h('input', { type: 'checkbox', checked: state.benchSelected.has(b.hash_key),
-          onchange: e => { e.target.checked ? state.benchSelected.add(b.hash_key) : state.benchSelected.delete(b.hash_key); render(); } }) : null),
-        h('td', {}, b.miner, h('small', { class: 'help' }, '  ' + b.version)),
-        h('td', {}, b.algorithm),
-        h('td', { title: b.devices.join(', ') }, b.group),
-        h('td', { class: 'num' }, fmtHash(b.hashrate)),
-        h('td', { class: 'num' + (b.rejected_percent > 5 ? ' hot' : '') }, b.rejected_percent === undefined ? '-' : b.rejected_percent.toFixed(2).replace(/[.]?0+$/, '') + ' %'),
-        h('td', { class: 'num' }, fmtWatts(b.power_watts)),
-        h('td', {}, h('span', { class: 'badge ' + b.status.replace(/ /g, ''), title: BENCH_STATUS[b.status] || '' }, status)),
-        h('td', {}, b.updated ? new Date(b.updated).toLocaleString() : '-'),
-        h('td', {}, b.log ? h('a', { href: '#/logs', title: b.log, onclick: () => { state.minerLog = { name: b.log, text: '' }; loadMinerLog(b.log); } }, 'log') : ''));
-    }))));
-
+  const selected = t.rows.filter(resettable).map(b => b.hash_key).filter(k => state.benchSelected.has(k));
   return h('div', {}, h('h1', {}, 'Manage Miner Benchmarks'), actions,
-    h('h2', {}, 'Benchmark status', h('small', {}, rows.length + ' of ' + all.length + ' shown')),
-    h('div', { class: 'toolbar' },
+    h('div', { class: 'title' }, h('h2', {}, 'Benchmark Status'),
       h('button', { class: 'primary', disabled: selected.length === 0,
         onclick: () => resetBenchmarks({ hash_keys: selected }, 'Measure the ' + selected.length + ' selected benchmarks again?') },
         'Benchmark selected' + (selected.length ? '  (' + selected.length + ')' : '')),
-      h('span', { class: 'help' }, 'A miner on an algorithm is measured once per device group; the figure counts for every coin and pool. The list is brought up to date once per round.')),
-    all.length ? table : h('div', { class: 'empty' }, 'Nothing yet. The list appears with the first round of the engine.'));
+      h('span', { class: 'help' }, t.rows.length + ' of ' + all.length + ' shown, brought up to date once per round')),
+    t.el);
 }
 
 async function resetBenchmarks(body, question) {
@@ -495,65 +597,80 @@ async function resetBenchmarks(body, question) {
   } catch (e) { toast(e.message, true); }
 }
 
-// ----------------------------------------------------------------- pools
+// -------------------------------------------------------------- activity
 
-function minedAlgorithms() {
-  const set = new Set();
-  for (const m of (state.meta ? state.meta.miners : [])) for (const a of m.algorithms) set.add(a);
-  return set;
+function renderActivity() {
+  const minutes = r => (new Date(r.ended) - new Date(r.started)) / 60000;
+  const rejected = r => (r.accepted + r.rejected > 0 ? 100 * r.rejected / (r.accepted + r.rejected) : -1);
+  const satKWh = r => (r.energy_kwh > 0.0005 && r.earned_btc ? r.earned_btc * 1e8 / r.energy_kwh : 0);
+  const t = dataTable('activity', [
+    { key: 'end', label: 'End', filter: ['switched', 'crashed', 'no hashrate', 'paused', 'stopped'],
+      cell: r => h('span', { class: 'badge ' + r.end.replace(/ /g, '') }, r.end === 'crashed' || r.end === 'no hashrate' ? r.end : 'ok') },
+    { key: 'started', label: 'Started', filter: false, value: r => new Date(r.started).getTime(), cell: r => fmtDate(r.started) },
+    { key: 'ended', label: 'Last Seen', filter: false, value: r => new Date(r.ended).getTime(), cell: r => fmtDate(r.ended) },
+    { key: 'min', label: 'Min', num: true, value: minutes, cell: r => minutes(r).toFixed(2) },
+    { key: 'miner', label: 'Name' },
+    { key: 'algorithm', label: 'Algorithms', cell: r => r.algorithm + (r.benchmark ? '  (benchmark)' : '') },
+    { key: 'group', label: 'Devices' },
+    { key: 'pool', label: 'Pool', value: r => (r.coin ? r.pool + ' : ' + r.coin : r.pool) },
+    { key: 'hashrate', label: 'Speed', num: true, cell: r => fmtHash(r.hashrate) },
+    { key: 'earned_btc', label: 'Earned', num: true, cell: r => fmtSat(r.earned_btc) },
+    { key: 'energy_kwh', label: 'Power', num: true, cell: r => (r.energy_kwh ? r.energy_kwh.toFixed(3) + ' kWh' : '') },
+    { key: 'satkwh', label: 'sat/kWh', num: true, value: satKWh, cell: r => (satKWh(r) ? satKWh(r).toFixed(2) : '') },
+    { key: 'rejected', label: 'Rejected', num: true, value: rejected, cell: r => (rejected(r) < 0 ? '' : rejected(r).toFixed(2) + ' %') },
+  ], state.activity, { empty: 'No miner has finished a run yet.', sort: { key: 'ended', dir: -1 } });
+  return h('div', {}, h('h1', {}, 'Active Miners over the past 3 days'),
+    h('p', { class: 'lead' }, '"Earned" is an estimate from the measured hashrate and the pool\'s price at the time, not what the pool has credited.'),
+    h('div', { class: 'toolbar' }, h('a', { class: 'button', href: '/api/activity.csv' }, 'Download as CSV'),
+      h('span', { class: 'help' }, t.rows.length + ' of ' + state.activity.length + ' runs shown')),
+    t.el);
 }
 
-function renderPools() {
-  const mine = minedAlgorithms();
-  const filter = state.offerFilter.trim().toLowerCase();
-  const excluded = new Set(state.config ? state.config.pools.zpool.exclude_coins : []);
-  const rows = state.offers
-    .filter(o => !state.offerMineOnly || mine.has(o.algorithm))
-    .filter(o => !filter || (o.algorithm + ' ' + o.coin + ' ' + o.coin_name).toLowerCase().includes(filter))
-    .sort((a, b) => a.algorithm.localeCompare(b.algorithm) || b.price - a.price);
+// -------------------------------------------------------------- watchdog
 
-  const toolbar = h('div', { class: 'toolbar' },
-    h('input', { type: 'search', placeholder: 'Filter by algorithm or coin', value: state.offerFilter,
-      oninput: e => { state.offerFilter = e.target.value; rerenderKeepingFocus(e.target); } }),
-    h('label', {}, h('input', { type: 'checkbox', checked: state.offerMineOnly,
-      onchange: e => { state.offerMineOnly = e.target.checked; render(); } }), ' only algorithms a miner program supports'),
-    h('span', { class: 'help' }, rows.length + ' offers'));
-
-  const table = rows.length ? h('div', { class: 'scroll' }, h('table', {},
-    h('thead', {}, h('tr', {},
-      h('th', {}, 'Algorithm'), h('th', {}, 'Coin'), h('th', {}, 'Pool'),
-      h('th', { class: 'num' }, 'Pays per day'), h('th', { class: 'num' }, 'Pool hashrate'), h('th', { class: 'num' }, 'Workers'),
-      h('th', { class: 'num' }, 'Pool fee'), h('th', {}, ''))),
-    h('tbody', {}, rows.map(o => h('tr', {},
-      h('td', {}, o.algorithm),
-      h('td', {}, o.coin ? o.coin + (o.coin_name ? '  (' + o.coin_name + ')' : '') : 'pool picks the coin'),
-      h('td', {}, o.pool),
-      h('td', { class: 'num' }, fmtPrice(o.price)),
-      h('td', { class: 'num' }, fmtHash(o.hashrate)),
-      h('td', { class: 'num' }, o.workers),
-      h('td', { class: 'num' }, o.fee_percent + ' %'),
-      h('td', {}, o.coin && !excluded.has(o.coin)
-        ? h('button', { class: 'small', title: 'Never mine this coin on its own', onclick: () => excludeCoin(o.coin) }, 'Exclude coin') : null))))))
-    : h('div', { class: 'empty' }, state.offers.length ? 'No offer matches.' : 'No offers yet. They appear once the engine has asked the pool.');
-
-  return h('div', {}, h('h1', {}, 'Pools'),
-    h('p', { class: 'help' }, 'What zpool.ca pays right now. "Pool picks the coin" is the pool\'s own port for an algorithm, where it switches between coins itself; the other rows mine exactly one coin. Coins nobody is mining at the pool are not offered.'),
-    toolbar, table);
+function renderWatchdog() {
+  const s = state.status;
+  if (!s) return h('div', { class: 'empty' }, 'Loading ...');
+  const rows = [];
+  for (const g of s.groups) {
+    for (const d of g.disabled || []) rows.push(Object.assign({ group: g.name, hash_key: d.hash_key, out: true, until: d.until }, parseKey(d.hash_key)));
+    for (const c of g.crashes || []) rows.push(Object.assign({ group: g.name, hash_key: c.hash_key, out: false, count: c.count, last: c.last }, parseKey(c.hash_key)));
+  }
+  const t = dataTable('watchdog', [
+    { key: 'miner', label: 'Minername' },
+    { key: 'algorithm', label: 'Algorithm' },
+    { key: 'group', label: 'Device' },
+    { key: 'state', label: 'State', value: r => (r.out ? 'taken out' : 'counting'), filter: ['taken out', 'counting'],
+      cell: r => (r.out ? h('span', { class: 'badge failed' }, 'taken out, tried again in ' + fmtUntil(r.until))
+        : h('span', { class: 'badge todo' }, r.count + (r.count === 1 ? ' failure' : ' failures') + ' in the last hour')) },
+    { key: 'last', label: 'Last', filter: false, value: r => (r.last ? new Date(r.last).getTime() : 0), cell: r => (r.last ? fmtAgo(r.last) + ' ago' : '') },
+    { key: 'action', label: '', filter: false, value: () => '',
+      cell: r => (r.out ? h('button', { class: 'small', onclick: () => enableCandidate(r.hash_key) }, 'Try again now') : '') },
+  ], rows, { empty: 'No miner has failed lately.' });
+  return h('div', {},
+    h('div', { class: 'title' }, h('h1', {}, 'Watchdog Timers'),
+      h('button', { class: 'primary', disabled: rows.length === 0, onclick: resetWatchdog }, 'Reset Watchdog')),
+    h('p', { class: 'lead' }, 'A miner that exits on its own or reports no hashrate for five minutes is restarted. After three failures within an hour it is taken out for an hour; a benchmark without any hashrate takes it out for six.'),
+    t.el);
 }
 
-async function excludeCoin(coin) {
-  if (!confirm('Never mine ' + coin + ' as a single coin? You can undo this under Configuration > Pools.')) return;
+async function resetWatchdog() {
   try {
-    const cfg = JSON.parse(JSON.stringify(state.config));
-    cfg.pools.zpool.exclude_coins.push(coin);
-    await api('/api/config', { method: 'PUT', body: cfg });
-    toast(coin + ' excluded');
-    await loadConfig();
-    render();
+    await api('/api/watchdog/reset', { method: 'POST' });
+    toast('Watchdog reset');
+    setTimeout(refreshStatus, 1500);
   } catch (e) { toast(e.message, true); }
 }
 
-// --------------------------------------------------------- configuration
+async function enableCandidate(hashKey) {
+  try {
+    await api('/api/candidates/enable', { method: 'POST', body: { hash_key: hashKey } });
+    toast('Enabled again');
+    setTimeout(refreshStatus, 1500);
+  } catch (e) { toast(e.message, true); }
+}
+
+// ----------------------------------------------------------------- setup
 
 function getPath(obj, path) { return path.split('.').reduce((o, k) => (o === undefined || o === null ? o : o[k]), obj); }
 function setPath(obj, path, value) {
@@ -590,7 +707,7 @@ function selectField(label, path, help, options) {
   const current = getPath(state.draft, path);
   const values = options.map(o => o.value);
   if (!values.includes(current)) options = [{ value: current, text: current }].concat(options);
-  return field(label, help, h('select', { onchange: e => setPath(state.draft, path, e.target.value) },
+  return field(label, help, h('select', { onchange: e => { setPath(state.draft, path, e.target.value); render(); } },
     options.map(o => h('option', { value: o.value, selected: o.value === current }, o.text))));
 }
 
@@ -605,61 +722,57 @@ function toggleList(items, path, text) {
     } }), text ? text(item) : item)));
 }
 
-const CONFIG_TABS = [
-  ['general', 'General', 'config.yaml'],
-  ['pools', 'Pools', 'pools.yaml'],
-  ['miners', 'Miners', 'miners.yaml'],
-  ['algorithms', 'Algorithms', 'algorithms.yaml'],
-  ['devices', 'Devices', 'devices.yaml'],
-];
+const SETUP = {
+  setup: ['Setup', 'config.yaml', setupGeneral],
+  setuppools: ['Setup Pools', 'pools.yaml', setupPools],
+  setupminers: ['Setup Miners', 'miners.yaml', setupMiners],
+  setupalgorithms: ['Setup Algorithms', 'algorithms.yaml', setupAlgorithms],
+  setupdevices: ['Setup Devices', 'devices.yaml', setupDevices],
+};
 
-function renderConfig() {
+function renderSetup() {
   if (!state.draft || !state.meta) return h('div', { class: 'empty' }, 'Loading ...');
-  const tab = CONFIG_TABS.find(t => t[0] === state.configTab) || CONFIG_TABS[0];
-  const tabs = h('div', { class: 'tabs' }, CONFIG_TABS.map(t =>
-    h('button', { class: t[0] === tab[0] ? 'active' : '', onclick: () => { state.configTab = t[0]; render(); } }, t[1])));
-
-  const body = { general: configGeneral, pools: configPools, miners: configMiners, algorithms: configAlgorithms, devices: configDevices }[tab[0]]();
-  const error = h('span', { class: 'error', id: 'config-error' });
+  const [title, file, body] = SETUP[state.page];
+  const changed = JSON.stringify(state.draft) !== JSON.stringify(state.config);
   const savebar = h('div', { class: 'savebar' },
     h('button', { class: 'primary', onclick: saveConfig }, 'Save and apply'),
     h('button', { onclick: () => { state.draft = JSON.parse(JSON.stringify(state.config)); render(); } }, 'Discard changes'),
-    error,
-    h('span', { class: 'note' }, 'Saving writes ' + state.meta.config_dir + ' and restarts the miners with the new settings.'));
-
-  return h('div', {}, h('h1', {}, 'Configuration'), tabs,
-    h('p', { class: 'help' }, 'File: ', h('code', {}, tab[2])),
-    h('div', { class: 'form' }, body), savebar);
+    h('span', { class: 'error', id: 'config-error' }),
+    h('span', { class: 'note' }, 'Saving writes all setup pages to ' + state.meta.config_dir + ' and restarts the miners with the new settings.'
+      + (changed ? ' There are unsaved changes.' : '')));
+  return h('div', {}, h('h1', {}, title),
+    h('p', { class: 'lead' }, 'File: ', h('code', {}, file)),
+    h('div', { class: 'form' }, body()), savebar);
 }
 
-function configGeneral() {
+function setupGeneral() {
   return [
-    h('div', { class: 'section' }, h('h3', {}, 'Rig'),
-      textField('Worker name', 'general.worker', 'Names this rig at the pools. Letters, digits, - and _.'),
+    h('div', { class: 'section' }, h('h3', {}, 'Basic Setup'),
+      textField('Worker Name', 'general.worker', 'Names this rig at the pools. Letters, digits, - and _.'),
       textField('Data directory', 'general.data_dir', 'Miner programs, logs and the statistics database are kept here.')),
-    h('div', { class: 'section' }, h('h3', {}, 'Electricity'),
+    h('div', { class: 'section' }, h('h3', {}, 'Set Electricity Cost Handling'),
       numberField('Price per kWh', 'general.power.price_per_kwh', 'With 0, electricity is not counted. Otherwise the cost of the measured power draw is taken off the earnings.', '0.01'),
-      textField('Currency', 'general.power.currency', 'Three letter code, e.g. EUR or USD. Earnings are shown in it, and the price above is in it.')),
-    h('div', { class: 'section' }, h('h3', {}, 'Switching'),
+      textField('Currency', 'general.power.currency', 'Three letter code, e.g. EUR or USD. Earnings are shown in it, and the price above is in it.'),
+      boolField('Mine at a loss', 'general.switching.mine_at_loss', 'Keep mining when electricity costs more than is earned.')),
+    h('div', { class: 'section' }, h('h3', {}, 'Profit Switching'),
       textField('Round length', 'general.switching.interval', 'How often hashrates are stored and the choice of miner is reconsidered. 30s to 1h, e.g. 1m.'),
       numberField('Hysteresis in percent', 'general.switching.hysteresis_percent', 'Another candidate must earn this much more before the running miner is stopped for it.'),
       textField('Minimum run time', 'general.switching.min_run_time', 'A started miner is left alone for at least this long, e.g. 5m.'),
-      textField('Benchmark time', 'general.switching.benchmark_time', 'Measured mining time a miner needs before its hashrate is trusted, e.g. 3m.'),
-      boolField('Mine at a loss', 'general.switching.mine_at_loss', 'Keep mining when electricity costs more than is earned.')),
-    h('div', { class: 'section' }, h('h3', {}, 'CPU mining'),
+      textField('Benchmark time', 'general.switching.benchmark_time', 'Measured mining time a miner needs before its hashrate is trusted, e.g. 3m.')),
+    h('div', { class: 'section' }, h('h3', {}, 'CPU'),
       boolField('Mine with the CPU', 'general.cpu.enabled', 'Off by default: it makes the machine slow for everything else, and the GPU miners need some CPU time themselves.'),
-      numberField('Assumed power draw in watts', 'general.cpu.watts', 'Used for the electricity cost; a CPU cannot be measured the way a GPU can.'),
-      numberField('Threads', 'general.cpu.threads', '0 lets the miner decide.', '1')),
+      numberField('CPU Mining Threads', 'general.cpu.threads', '0 lets the miner decide.', '1'),
+      numberField('Assumed power draw in watts', 'general.cpu.watts', 'Used for the electricity cost; a CPU cannot be measured the way a GPU can.')),
     h('div', { class: 'section' }, h('h3', {}, 'Memory'),
-      numberField('Keep free, in GB', 'general.memory.min_free_ram_gb', 'Main memory (RAM and page file together) that is left for everything else. A miner whose algorithm needs more than the rest is not started. This is what keeps two miners from building a large DAG at the same time and running the machine out of memory.', '0.5'),
-      numberField('Keep free on every graphics card, in GB', 'general.memory.reserved_vram_gb', 'Graphics memory that is left alone, for example for the desktop.', '0.1')),
-    h('div', { class: 'section' }, h('h3', {}, 'Web interface'),
+      numberField('Min. Free RAM, in GB', 'general.memory.min_free_ram_gb', 'Main memory (RAM and page file together) that is left for everything else. A miner whose algorithm needs more than the rest is not started. This is what keeps two miners from building a large DAG at the same time and running the machine out of memory.', '0.5'),
+      numberField('Reserved GPU VRAM, in GB', 'general.memory.reserved_vram_gb', 'Graphics memory that is left alone on every card, for example for the desktop.', '0.1')),
+    h('div', { class: 'section' }, h('h3', {}, 'Machine\'s localhost API setup'),
       textField('Listen address', 'general.api.listen', 'host:port. 127.0.0.1 is only reachable from this machine. A change takes effect after rbm is restarted. Empty turns the interface off.'),
       textField('Password', 'general.api.password', 'Without a password the interface only works on this machine. With one, every access needs it (the user name does not matter). Use it only on a network you trust: the connection is not encrypted.', 'password')),
   ];
 }
 
-function configPools() {
+function setupPools() {
   const currencies = state.meta.payout_currencies.map(c => ({
     value: c.symbol, text: c.symbol + ' - ' + c.name + (c.notice ? '  (!)' : '') }));
   const chosen = state.meta.payout_currencies.find(c => c.symbol === state.draft.pools.zpool.currency);
@@ -667,43 +780,50 @@ function configPools() {
     (chosen && chosen.minimum_payout ? ' Minimum payout: ' + chosen.minimum_payout + ' ' + chosen.symbol + '.' : '') +
     (chosen && chosen.notice ? ' Notice from zpool: ' + chosen.notice : '');
   return [
-    h('div', { class: 'section' }, h('h3', {}, 'zpool.ca'),
+    h('div', { class: 'section' }, h('h3', {}, 'Zpool'),
       boolField('Use this pool', 'pools.zpool.enabled', ''),
       currencies.length
         ? selectField('Payout coin', 'pools.zpool.currency', currencyHelp, currencies)
         : textField('Payout coin', 'pools.zpool.currency', 'zpool could not be asked for its list; enter the symbol, e.g. BTC, LTC or RVN.'),
-      textField('Wallet address', 'pools.zpool.wallet', 'Must be an address of the payout coin. rbm cannot check that; a wrong address is only noticed by the pool.'),
+      textField('Wallet', 'pools.zpool.wallet', 'Must be an address of the payout coin. rbm cannot check that; a wrong address is only noticed by the pool.'),
       selectField('Region', 'pools.zpool.region', 'The stratum servers to connect to.', state.meta.zpool_regions.map(r => ({ value: r, text: r }))),
-      boolField('TLS', 'pools.zpool.tls', 'Encrypt the connection to the pool where it has a port for it.')),
+      boolField('SSL', 'pools.zpool.tls', 'Encrypt the connection to the pool where it has a port for it.')),
     h('div', { class: 'section' }, h('h3', {}, 'What to mine there'),
-      boolField('Algorithm ports', 'pools.zpool.algo_switching', 'Mine on the pool\'s port for an algorithm and let the pool pick the coin. It may switch every few minutes; for algorithms with a DAG (KawPoW and relatives) every switch rebuilds it, which costs time and needs a lot of memory.'),
-      boolField('Single coins', 'pools.zpool.coin_mining', 'Mine exactly one coin at a time, chosen by what it pays. No DAG switching, but a single coin often pays less than the algorithm port.'),
-      listField('Only these coins', 'pools.zpool.coins', 'Symbols separated by commas. Empty allows every coin the pool offers.'),
-      listField('Never these coins', 'pools.zpool.exclude_coins', 'Symbols separated by commas.')),
+      boolField('Zpool (algorithm ports)', 'pools.zpool.algo_switching', 'Mine on the pool\'s port for an algorithm and let the pool pick the coin. It may switch every few minutes; for algorithms with a DAG (KawPoW and relatives) every switch rebuilds it, which costs time and needs a lot of memory.'),
+      boolField('ZpoolCoins (single coins)', 'pools.zpool.coin_mining', 'Mine exactly one coin at a time, chosen by what it pays. No DAG switching, but a single coin often pays less than the algorithm port.'),
+      listField('CoinSymbol', 'pools.zpool.coins', 'Mine only these coins as single coins. Symbols separated by commas; empty allows every coin the pool offers.'),
+      listField('ExcludeCoinSymbol', 'pools.zpool.exclude_coins', 'Never mine these as single coins. Symbols separated by commas.')),
   ];
 }
 
-function minerDraft(name) {
-  if (!state.draft.miners[name]) state.draft.miners[name] = { disabled: false, exclude_algorithms: [], extra_args: [] };
-  return state.draft.miners[name];
+// minerDraft gives the settings of a miner program, which are only in the
+// configuration once something was set for it.
+function minerDraft(name, create) {
+  const fresh = { disabled: false, exclude_algorithms: [], extra_args: [] };
+  if (!state.draft.miners[name] && create) state.draft.miners[name] = fresh;
+  return state.draft.miners[name] || fresh;
 }
 
-function configMiners() {
+function setupMiners() {
   return state.meta.miners.map(m => {
-    minerDraft(m.name);
-    const base = 'miners.' + m.name;
+    const excluded = minerDraft(m.name).exclude_algorithms;
     return h('div', { class: 'section' },
-      h('h3', {}, m.name + ' ' + m.version, h('small', {}, '  ' + m.vendor + ', fee ' + m.fee_percent + ' % unless an algorithm differs')),
+      h('h3', {}, m.name + ' ' + m.version, h('small', { class: 'help' }, '  ' + m.vendor + ', fee ' + m.fee_percent + ' % unless an algorithm differs')),
       field('Use this miner', '', h('input', { type: 'checkbox', checked: !minerDraft(m.name).disabled,
-        onchange: e => { minerDraft(m.name).disabled = !e.target.checked; } })),
-      field('Algorithms', 'Unchecked algorithms are not mined with this program.', toggleList(m.algorithms, base + '.exclude_algorithms')),
-      field('Extra arguments', 'Added to the command line, separated by spaces. Example for Rigel: --temp-limit tc[80-85]',
+        onchange: e => { minerDraft(m.name, true).disabled = !e.target.checked; } })),
+      field('Algorithms', 'Unchecked algorithms are not mined with this program.', h('div', { class: 'checks' }, m.algorithms.map(a => h('label', {},
+        h('input', { type: 'checkbox', checked: !excluded.includes(a), onchange: e => {
+          const d = minerDraft(m.name, true);
+          d.exclude_algorithms = d.exclude_algorithms.filter(x => x !== a);
+          if (!e.target.checked) d.exclude_algorithms.push(a);
+        } }), a)))),
+      field('Params', 'Added to the command line, separated by spaces. Example for Rigel: --temp-limit tc[80-85]',
         h('input', { type: 'text', value: minerDraft(m.name).extra_args.join(' '),
-          oninput: e => { minerDraft(m.name).extra_args = e.target.value.split(/\s+/).filter(Boolean); } })));
+          oninput: e => { minerDraft(m.name, true).extra_args = e.target.value.split(/\s+/).filter(Boolean); } })));
   });
 }
 
-function configAlgorithms() {
+function setupAlgorithms() {
   const all = Array.from(minedAlgorithms()).sort();
   return [
     h('div', { class: 'section' }, h('h3', {}, 'Algorithms'),
@@ -712,17 +832,17 @@ function configAlgorithms() {
   ];
 }
 
-function configDevices() {
+function setupDevices() {
   const gpus = state.devices.filter(d => d.kind === 'gpu').map(d => d.id);
   const names = {};
   for (const d of state.devices) names[d.id] = d.id + '  ' + (d.model || '');
   return [
-    h('div', { class: 'section' }, h('h3', {}, 'Graphics cards'),
+    h('div', { class: 'section' }, h('h3', {}, 'NVIDIA'),
       gpus.length
         ? field('Mine with', 'Unchecked cards stay out of mining. Cards of the same model mine together with one miner program.', toggleList(gpus, 'devices.exclude', id => names[id]))
         : h('div', { class: 'help' }, 'No NVIDIA card was found.')),
     h('div', { class: 'section' }, h('h3', {}, 'CPU'),
-      boolField('Mine with the CPU', 'general.cpu.enabled', 'The same setting as under General.')),
+      boolField('Mine with the CPU', 'general.cpu.enabled', 'The same setting as under Setup.')),
   ];
 }
 
@@ -740,16 +860,16 @@ async function saveConfig() {
   }
 }
 
-// ------------------------------------------------------------------ logs
+// --------------------------------------------------------------- console
 
-function renderLogs() {
+function renderConsole() {
   const engineLog = h('pre', { class: 'log', id: 'engine-log' }, state.log.join('\n') || 'Nothing logged yet.');
   const select = h('select', { onchange: e => loadMinerLog(e.target.value) },
     h('option', { value: '' }, state.minerLogs.length ? 'Choose a miner log ...' : 'No miner logs yet'),
     state.minerLogs.map(f => h('option', { value: f.name, selected: f.name === state.minerLog.name },
       f.name + '   (' + Math.max(1, Math.round(f.size / 1024)) + ' kB)')));
-  const out = h('div', {}, h('h1', {}, 'Logs'),
-    h('h2', {}, 'rbm'), engineLog,
+  const out = h('div', {}, h('h1', {}, 'Console'),
+    h('h2', { class: 'first' }, 'rbm'), engineLog,
     h('h2', {}, 'Miner programs'),
     h('div', { class: 'toolbar' }, select,
       h('button', { onclick: () => loadMinerLog(state.minerLog.name), disabled: !state.minerLog.name }, 'Reload')),
@@ -770,6 +890,21 @@ async function loadMinerLog(name) {
 
 // --------------------------------------------------------------- loading
 
+const VIEWS = {
+  dashboard: renderDashboard, console: renderConsole, devices: renderDevices,
+  bestpools: renderBestPools, allpools: renderAllPools, earnings: renderEarnings, totals: renderTotals, payouts: renderPayouts,
+  miners: renderMiners, benchmarks: renderBenchmarks, activity: renderActivity, watchdog: renderWatchdog,
+  setup: renderSetup, setuppools: renderSetup, setupminers: renderSetup, setupalgorithms: renderSetup, setupdevices: renderSetup,
+};
+
+// what each page needs besides the status
+const NEEDS = {
+  dashboard: ['devices', 'balances'], devices: ['devices'],
+  bestpools: ['offers'], allpools: ['offers'], earnings: ['balances'], payouts: ['balances'], totals: ['totals'],
+  benchmarks: ['benchmarks'], activity: ['activity'], console: ['log', 'minerlogs'],
+};
+const SOURCES = { devices: 'devices', balances: 'balances', offers: 'offers', totals: 'totals', benchmarks: 'benchmarks', activity: 'activity', log: 'log', minerlogs: 'minerLogs' };
+
 async function refreshStatus() {
   const conn = document.getElementById('conn');
   try {
@@ -784,26 +919,17 @@ async function refreshStatus() {
   const banner = document.getElementById('banner');
   banner.hidden = !state.status.waiting;
   banner.textContent = state.status.waiting ? 'Not mining: ' + state.status.waiting : '';
-
   renderTopbar();
-  try {
-    if (state.page === 'dashboard') {
-      state.devices = await api('/api/devices');
-      state.balances = await api('/api/balances');
-    }
-    if (state.page === 'activity') state.activity = await api('/api/activity');
-    if (state.page === 'benchmarks') state.benchmarks = await api('/api/benchmarks');
-    if (state.page === 'pools') state.offers = await api('/api/offers');
-    if (state.page === 'logs') {
-      state.log = await api('/api/log');
-      state.minerLogs = await api('/api/minerlogs');
-    }
-  } catch (e) { /* shown as stale data; the next tick tries again */ }
 
-  // the configuration page is not redrawn under the user's hands, and
-  // neither is anything while a text field is being typed into
-  const typing = document.activeElement && ['INPUT', 'SELECT'].includes(document.activeElement.tagName);
-  if (state.page !== 'config' && !typing) render();
+  for (const what of NEEDS[state.page] || []) {
+    try { state[SOURCES[what]] = await api('/api/' + what); } catch (e) { /* stale figures stay; the next tick tries again */ }
+  }
+
+  // nothing is redrawn under the user's hands: not the setup pages, and no
+  // page while a field is being typed into
+  const active = document.activeElement;
+  const typing = active && ['INPUT', 'SELECT', 'TEXTAREA'].includes(active.tagName);
+  if (!SETUP[state.page] && !typing) render();
 }
 
 async function loadConfig() {
@@ -812,20 +938,23 @@ async function loadConfig() {
   state.meta = res.meta;
   state.draft = JSON.parse(JSON.stringify(res.config));
   document.getElementById('version').textContent = 'v' + res.meta.version;
+  document.getElementById('worker').textContent = 'Worker: ' + res.config.general.worker;
 }
 
-function rerenderKeepingFocus(input) {
-  const pos = input.selectionStart;
-  const key = input.getAttribute('data-filter');
-  render();
-  const again = key ? document.querySelector('input[data-filter="' + key + '"]') : document.querySelector('input[type=search]');
-  if (again) { again.focus(); again.setSelectionRange(pos, pos); }
-}
-
+// render draws the current page. A filter field that was being typed into
+// keeps the cursor.
 function render() {
-  const view = { dashboard: renderDashboard, miners: renderMiners, benchmarks: renderBenchmarks, pools: renderPools, activity: renderActivity, config: renderConfig, logs: renderLogs }[state.page]();
-  document.getElementById('page').replaceChildren(view);
+  const active = document.activeElement;
+  const filter = active && active.getAttribute ? active.getAttribute('data-filter') : null;
+  const pos = filter ? active.selectionStart : 0;
+
+  document.getElementById('page').replaceChildren(VIEWS[state.page]());
   for (const a of document.querySelectorAll('#nav a')) a.classList.toggle('active', a.dataset.page === state.page);
+
+  if (filter) {
+    const again = document.querySelector('input[data-filter="' + filter + '"]');
+    if (again) { again.focus(); again.setSelectionRange(pos, pos); }
+  }
 }
 
 async function route() {

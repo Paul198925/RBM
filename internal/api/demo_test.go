@@ -33,6 +33,7 @@ func (d demoBackend) Status() engine.Status {
 				{ID: "hashrate/wildrig/GPU#00/skydoge@zpool", HashKey: "hashrate/wildrig/GPU#00/skydoge", Miner: "wildrig", Algorithm: "skydoge", Pool: "zpool", Price: 4.2e-9, FeePercent: 2},
 			},
 			Disabled: []engine.DisabledStatus{{HashKey: "hashrate/wildrig/GPU#00/firopow", Until: time.Now().Add(5*time.Hour + 12*time.Minute)}},
+			Crashes:  []engine.CrashStatus{{HashKey: "hashrate/srbminer/GPU#00/sha512256d", Count: 2, Last: time.Now().Add(-7 * time.Minute)}},
 		},
 		{
 			Name: "RTX2080SUPER", Devices: []string{"GPU#01"}, State: "benchmarking", Reason: "needs a benchmark",
@@ -42,6 +43,7 @@ func (d demoBackend) Status() engine.Status {
 				{ID: "hashrate/wildrig/GPU#01/meowpow@zpool:MEWC", HashKey: "hashrate/wildrig/GPU#01/meowpow", Miner: "wildrig", Algorithm: "meowpow", Pool: "zpool", Coin: "MEWC", Price: 9e-14, FeePercent: 0.75},
 			},
 			Disabled: []engine.DisabledStatus{},
+			Crashes:  []engine.CrashStatus{},
 		},
 		{
 			Name: "CPU", Devices: []string{"CPU#00"}, State: "idle", Reason: "not profitable: electricity costs more than mining earns",
@@ -49,6 +51,7 @@ func (d demoBackend) Status() engine.Status {
 				{ID: "hashrate/xmrig/CPU#00/ghostrider@zpool", HashKey: "hashrate/xmrig/CPU#00/ghostrider", Miner: "xmrig", Algorithm: "ghostrider", Pool: "zpool", Benchmarked: true, Hashrate: 2150, Price: 5.5e-10, FeePercent: 1, Power: 125, RevenueBTC: 1.17e-6, ProfitBTC: -0.4e-6},
 			},
 			Disabled: []engine.DisabledStatus{},
+			Crashes:  []engine.CrashStatus{},
 		},
 	}}
 }
@@ -60,12 +63,14 @@ func (d demoBackend) System() System {
 }
 
 func (d demoBackend) Offers() []pool.Offer {
+	updated := time.Now().Add(-40 * time.Second)
+	host := func(algo string) string { return algo + ".eu.mine.zpool.ca" }
 	return []pool.Offer{
-		{Pool: "zpool", Algorithm: "kawpow", Price: 1.19e-13, Hashrate: 5.17e9, Workers: 88, FeePercent: 1},
-		{Pool: "zpool", Algorithm: "kawpow", Coin: "CLORE", CoinName: "Clore", Price: 1.1e-13, Hashrate: 3.1e9, Workers: 60, FeePercent: 1},
-		{Pool: "zpool", Algorithm: "kawpow", Coin: "MEWC", CoinName: "Meowcoin <b>bold?</b>", Price: 9e-14, Hashrate: 2e8, Workers: 11, FeePercent: 1},
-		{Pool: "zpool", Algorithm: "ghostrider", Price: 6.3e-10, Hashrate: 97190, Workers: 7223, FeePercent: 1},
-		{Pool: "zpool", Algorithm: "sha256", Price: 2e-19, Hashrate: 4e17, Workers: 300, FeePercent: 1},
+		{Pool: "zpool", Algorithm: "kawpow", Host: host("kawpow"), Port: 1325, Price: 1.19e-13, Price24h: 1.12e-13, Actual24h: 1.05e-13, Hashrate: 5.17e9, Workers: 88, FeePercent: 1, Updated: updated},
+		{Pool: "zpool", Algorithm: "kawpow", Coin: "CLORE", CoinName: "Clore", Host: host("kawpow"), Port: 1325, Price: 1.1e-13, Hashrate: 3.1e9, Workers: 60, FeePercent: 1, LastBlockSeconds: 396, Blocks24h: 211, Updated: updated},
+		{Pool: "zpool", Algorithm: "kawpow", Coin: "MEWC", CoinName: "Meowcoin <b>bold?</b>", Host: host("kawpow"), Port: 1325, Price: 9e-14, Hashrate: 2e8, Workers: 11, FeePercent: 1, LastBlockSeconds: 4210, Blocks24h: 17, Updated: updated},
+		{Pool: "zpool", Algorithm: "ghostrider", Host: host("ghostrider"), Port: 5354, Price: 6.3e-10, Price24h: 6.0e-10, Actual24h: 6.4e-10, Hashrate: 97190, Workers: 7223, FeePercent: 1, Updated: updated},
+		{Pool: "zpool", Algorithm: "sha256", Host: host("sha256"), Port: 3333, Price: 2e-19, Hashrate: 4e17, Workers: 300, FeePercent: 1, Updated: updated},
 	}
 }
 

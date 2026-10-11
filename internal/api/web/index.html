@@ -9,14 +9,30 @@
 <body>
   <aside class="sidebar">
     <div class="brand">rbm <span id="version"></span></div>
+    <div class="worker" id="worker"></div>
     <nav id="nav">
+      <div class="nav-section">Main</div>
       <a href="#/" data-page="dashboard">Dashboard</a>
-      <a href="#/miners" data-page="miners">Miners</a>
+      <a href="#/console" data-page="console">Console</a>
+      <div class="nav-section">Devices</div>
+      <a href="#/devices" data-page="devices">Devices</a>
+      <div class="nav-section">Pools</div>
+      <a href="#/bestpools" data-page="bestpools">Best Pools</a>
+      <a href="#/allpools" data-page="allpools">All Pools</a>
+      <a href="#/earnings" data-page="earnings">Pool Earnings</a>
+      <a href="#/totals" data-page="totals">Pool Totals</a>
+      <a href="#/payouts" data-page="payouts">Pool Payouts</a>
+      <div class="nav-section">Miners</div>
+      <a href="#/miners" data-page="miners">Active Miners</a>
       <a href="#/benchmarks" data-page="benchmarks">Benchmarks</a>
-      <a href="#/pools" data-page="pools">Pools</a>
       <a href="#/activity" data-page="activity">Activity</a>
-      <a href="#/config" data-page="config">Configuration</a>
-      <a href="#/logs" data-page="logs">Logs</a>
+      <a href="#/watchdog" data-page="watchdog">Watchdog</a>
+      <div class="nav-section">Setup</div>
+      <a href="#/setup" data-page="setup">Setup</a>
+      <a href="#/setuppools" data-page="setuppools">Setup Pools</a>
+      <a href="#/setupminers" data-page="setupminers">Setup Miners</a>
+      <a href="#/setupalgorithms" data-page="setupalgorithms">Setup Algorithms</a>
+      <a href="#/setupdevices" data-page="setupdevices">Setup Devices</a>
     </nav>
     <div class="conn" id="conn">connecting ...</div>
   </aside>
