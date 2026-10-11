@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"rbm/internal/device"
+	"rbm/internal/miner"
 	"rbm/internal/stats"
 	"rbm/internal/sysinfo"
 )
@@ -254,5 +255,24 @@ func TestTLSIsSetPerPool(t *testing.T) {
 	e := &Engine{opts: Options{TLS: true, PoolTLS: map[string]bool{"zpool": false}}}
 	if e.wantsTLS("zpool") || !e.wantsTLS("2miners") {
 		t.Errorf("zpool %v, 2miners %v", e.wantsTLS("zpool"), e.wantsTLS("2miners"))
+	}
+}
+
+func TestSilenceLimit(t *testing.T) {
+	slow := miner.Algorithm{Name: "verthash", StartupMinutes: 30}
+	for _, c := range []struct {
+		algo   miner.Algorithm
+		hashed bool
+		want   time.Duration
+	}{
+		{miner.Algorithm{Name: "kawpow"}, false, watchdogTimeout},
+		{miner.Algorithm{Name: "kawpow", StartupMinutes: 1}, false, watchdogTimeout},
+		// long preparations are waited for, but only once
+		{slow, false, 30 * time.Minute},
+		{slow, true, watchdogTimeout},
+	} {
+		if got := silenceLimit(c.algo, c.hashed); got != c.want {
+			t.Errorf("%s, hashed %v: %v, want %v", c.algo.Name, c.hashed, got, c.want)
+		}
 	}
 }

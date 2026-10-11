@@ -70,6 +70,10 @@ type Algorithm struct {
 	// Fee overrides the miner's developer fee, in percent.
 	Fee          *float64 `yaml:"fee"`
 	MinMemoryMiB int      `yaml:"min_memory_mib"`
+	// StartupMinutes is how long the miner may take before its first
+	// hashrate, where an algorithm needs long preparations. 0 is the usual
+	// patience.
+	StartupMinutes int `yaml:"startup_minutes"`
 	// Args are added to the miner's arguments for this algorithm.
 	Args []string `yaml:"args"`
 }

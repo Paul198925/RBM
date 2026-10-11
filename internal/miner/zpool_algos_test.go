@@ -7,14 +7,13 @@ import (
 )
 
 // The algorithms zpool.ca listed on 2026-10-11, in the engine's spelling.
-// megamec and verthash are missing on purpose: no miner program known here
-// mines the first, and the second needs a data file of more than a gigabyte
-// that has to be built before mining can start.
+// megamec is missing on purpose: only versions of miner programs from 2021
+// and 2022 mine it.
 var zpoolAlgorithms = strings.Fields(`allium anime argon2d1000 argon2d16000 argon2d4096 argon2d500 balloon bmw512 curve
 	equihash equihash144 equihash192 evrprogpow firopow flex ghostrider groestl heavyhash hmq1725 hoohashpepew kawpow
 	lyra2v2 lyra2z330 m7m megabtx meowpow meraki mike minotaurx myrgr neoscrypt neoscryptxaya odocrypt phihash power2b
 	quark qubit rinhash sccpow scrypt scryptn2 sha256 sha3256t sha512256d skein skein2 skydoge soterg timetravel tribus
-	verushash whirlpool whirlpoolx2 x11 x13 x16rt x16rv2 x21s x25x yescrypt yescryptr16 yescryptr32 yescryptr8 yespower
+	verthash verushash whirlpool whirlpoolx2 x11 x13 x16rt x16rv2 x21s x25x yescrypt yescryptr16 yescryptr32 yescryptr8 yespower
 	yespoweradvc yespowereqpay yespowerltncg yespowermgpc yespowerr16 yespowersmt yespowersugar yespowertide yespowerurx`)
 
 func TestEveryZpoolAlgorithmHasAMiner(t *testing.T) {

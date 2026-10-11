@@ -71,3 +71,16 @@ algorithms:
   - name: ethash
     fee: 0.65
     min_memory_mib: 7680
+  # more of what zpool.ca offers
+  - name: sha3256t
+    miner_name: sha3t
+    fee: 1.0
+  - name: yescryptr8
+  - name: yescryptr32
+  - name: yespowertide
+  # Verthash needs a data file of 1.2 GB. The miner builds it on the first
+  # run, which takes many minutes without a hashrate; later runs find it.
+  - name: verthash
+    fee: 1.0
+    min_memory_mib: 2048
+    startup_minutes: 30

@@ -532,12 +532,22 @@ func (e *Engine) checkRun(g *group, now time.Time) {
 	if silentSince.Before(r.measureFrom) {
 		silentSince = r.measureFrom
 	}
-	if now.Sub(silentSince) < watchdogTimeout {
+	if now.Sub(silentSince) < silenceLimit(r.algo, !r.lastHash.IsZero()) {
 		return
 	}
 	e.deps.Logf("%s: %s reported no hashrate for %v", g.name, r.label(), now.Sub(silentSince).Round(time.Second))
 	e.stop(g, stats.EndNoHashrate, now)
 	e.failed(g, r.hashKey, now, r.benchmark)
+}
+
+// silenceLimit is how long a miner may go without reporting a hashrate.
+// Before its first one it gets the time its algorithm needs to prepare,
+// if that is more than the usual.
+func silenceLimit(a miner.Algorithm, hashed bool) time.Duration {
+	if startup := time.Duration(a.StartupMinutes) * time.Minute; !hashed && startup > watchdogTimeout {
+		return startup
+	}
+	return watchdogTimeout
 }
 
 // failed counts a failure of a miner on an algorithm. A benchmark that
