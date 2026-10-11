@@ -47,6 +47,7 @@ func TestHashratesAreExchangedOnlyAsAsked(t *testing.T) {
 	app.setStore(store)
 
 	// without a server nothing is exchanged
+	app.cfg.General.Sharing.URL = ""
 	app.exchangeHashrates(ctx)
 	if entries, _ := share.LoadCache(dataDir); entries != nil {
 		t.Fatalf("fetched without a server: %+v", entries)

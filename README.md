@@ -124,7 +124,7 @@ The list is short so far: an RTX 3060 and an RTX 2080 SUPER. To add your cards, 
 
 Rigs can also exchange their hashrates through a server, set under `sharing` in `config.yaml` or on the Setup page:
 
-- `url` is the server's address. Without one nothing is exchanged.
+- `url` is the server's address, `https://rbm-share.cylvaro.cloud` unless you set another. Empty exchanges nothing. Like every server it sees the address a request comes from; it does not store it.
 - `download: true` (the default) fetches twice a day what other rigs measured. It wins over the list that comes with rbm, and counts from the next start of the miners.
 - `upload: true` sends what this rig measured: card model, miner program with version, algorithm, hashrate and power draw, under a random number the rig makes up for itself. It is off unless you turn it on.
 

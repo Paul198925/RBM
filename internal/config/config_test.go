@@ -162,6 +162,27 @@ func TestReadyToMine(t *testing.T) {
 	}
 }
 
+func TestSharingDefaults(t *testing.T) {
+	// others' hashrates are fetched, this rig's are sent only when asked to
+	cfg := Default()
+	if s := cfg.General.Sharing; s.URL != DefaultShareURL || !strings.HasPrefix(s.URL, "https://") || !s.Download || s.Upload {
+		t.Errorf("sharing = %+v", s)
+	}
+	cfg.General.Sharing.URL = " https://example.org/ "
+	if err := cfg.Validate(); err != nil || cfg.General.Sharing.URL != "https://example.org" {
+		t.Errorf("url = %q, %v", cfg.General.Sharing.URL, err)
+	}
+	// no address turns the exchange off; one that is none is refused
+	cfg.General.Sharing.URL = ""
+	if err := cfg.Validate(); err != nil {
+		t.Error(err)
+	}
+	cfg.General.Sharing.URL = "example.org"
+	if err := cfg.Validate(); err == nil {
+		t.Error("an address without a scheme was accepted")
+	}
+}
+
 func TestWalletsAreKeptInOnePlace(t *testing.T) {
 	// an address entered for zpool alone becomes the wallet of its coin
 	cfg := Default()
