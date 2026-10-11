@@ -59,6 +59,10 @@ CREATE TABLE IF NOT EXISTS runs (
 	rejected  INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS runs_ended ON runs (ended);
+CREATE TABLE IF NOT EXISTS notes (
+	key   TEXT PRIMARY KEY,
+	value TEXT NOT NULL
+);
 `
 
 // Open opens the database at path and creates it if needed.

@@ -128,12 +128,16 @@ type Engine struct {
 	// memory that miners started a moment ago will take but have not yet
 	reserved []reservation
 
+	// the miner version each stored hashrate was measured with
+	versions map[string]string
+
 	// what other goroutines may touch
-	mu       sync.Mutex
-	status   Status
-	offerSet []pool.Offer
-	commands []func()
-	wake     chan struct{}
+	mu         sync.Mutex
+	status     Status
+	benchmarks []BenchmarkStatus
+	offerSet   []pool.Offer
+	commands   []func()
+	wake       chan struct{}
 }
 
 // reservation is memory a just started miner is about to take.
@@ -359,15 +363,7 @@ func (e *Engine) runCommands() {
 // ResetBenchmark forgets what was measured for a miner on an algorithm, so
 // that it is benchmarked again. It is safe to call from any goroutine.
 func (e *Engine) ResetBenchmark(hashKey string) {
-	e.do(func() {
-		for _, key := range []string{hashKey, powerKeyFor(hashKey)} {
-			if err := e.deps.Store.Delete(key); err != nil {
-				e.deps.Logf("reset %s: %v", key, err)
-				return
-			}
-		}
-		e.deps.Logf("benchmark of %s was reset", hashKey)
-	})
+	e.ResetBenchmarks("", []string{hashKey})
 }
 
 // Enable puts a miner on an algorithm back into the selection before its
@@ -422,7 +418,7 @@ func (e *Engine) round(ctx context.Context, now time.Time) error {
 			g.decision = selector.Decision{Reason: "paused"}
 		}
 		e.publish(now)
-		return nil
+		return e.listBenchmarks(now)
 	}
 
 	params := selector.Params{
@@ -497,7 +493,7 @@ func (e *Engine) round(ctx context.Context, now time.Time) error {
 		g.options, g.decision = options, decision
 		e.report(g, decision, params)
 	}
-	return nil
+	return e.listBenchmarks(now)
 }
 
 // checkRun stops a miner that exited or went silent and records the failure.
@@ -1032,6 +1028,11 @@ func (e *Engine) store(now time.Time) error {
 		}
 		if err := e.deps.Store.AddSample(r.hashKey, now, hashrate, power); err != nil {
 			return err
+		}
+		if outcome != stats.Rejected {
+			if err := e.noteVersion(r.hashKey, r.def.Version); err != nil {
+				return err
+			}
 		}
 		if outcome != stats.Accepted {
 			e.deps.Logf("%s: hashrate %s of %s was %s (stored average %s)",

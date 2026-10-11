@@ -72,3 +72,60 @@ func (s *Store) PruneRuns(before time.Time) error {
 	_, err := s.db.Exec("DELETE FROM runs WHERE ended < ?", before.Unix())
 	return err
 }
+
+// RunKey names a device group's runs of a miner on an algorithm.
+func RunKey(group, miner, algorithm string) string {
+	return group + "/" + miner + "/" + algorithm
+}
+
+// LastRuns returns the newest run of every device group, miner and
+// algorithm, by RunKey.
+func (s *Store) LastRuns() (map[string]Run, error) {
+	rows, err := s.db.Query(
+		"SELECT grp, miner, algorithm, started, ended, end, hashrate, accepted, rejected FROM runs " +
+			"WHERE id IN (SELECT MAX(id) FROM runs GROUP BY grp, miner, algorithm)")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	runs := map[string]Run{}
+	for rows.Next() {
+		var r Run
+		var started, ended int64
+		if err := rows.Scan(&r.Group, &r.Miner, &r.Algorithm, &started, &ended, &r.End, &r.Hashrate, &r.Accepted, &r.Rejected); err != nil {
+			return nil, err
+		}
+		r.Started, r.Ended = time.Unix(started, 0), time.Unix(ended, 0)
+		runs[RunKey(r.Group, r.Miner, r.Algorithm)] = r
+	}
+	return runs, rows.Err()
+}
+
+// SetNote stores a short text under key; an empty text removes it.
+func (s *Store) SetNote(key, value string) error {
+	if value == "" {
+		_, err := s.db.Exec("DELETE FROM notes WHERE key = ?", key)
+		return err
+	}
+	_, err := s.db.Exec("INSERT INTO notes (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value", key, value)
+	return err
+}
+
+// Notes returns the texts whose keys start with prefix, by the rest of the
+// key.
+func (s *Store) Notes(prefix string) (map[string]string, error) {
+	rows, err := s.db.Query("SELECT key, value FROM notes WHERE substr(key, 1, ?) = ?", len(prefix), prefix)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	notes := map[string]string{}
+	for rows.Next() {
+		var key, value string
+		if err := rows.Scan(&key, &value); err != nil {
+			return nil, err
+		}
+		notes[key[len(prefix):]] = value
+	}
+	return notes, rows.Err()
+}
