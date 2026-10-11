@@ -559,10 +559,39 @@ func (a *App) payoutCurrencies(ctx context.Context) []pool.PayoutCurrency {
 	return a.currencies
 }
 
-func (a *App) ResetBenchmark(hashKey string) {
+func (a *App) ResetBenchmarks(which string, hashKeys []string) {
 	if e := a.currentEngine(); e != nil {
-		e.ResetBenchmark(hashKey)
+		e.ResetBenchmarks(which, hashKeys)
 	}
+}
+
+// Benchmarks returns the engine's benchmark list, each entry with the name
+// of its newest miner log.
+func (a *App) Benchmarks() []engine.BenchmarkStatus {
+	e := a.currentEngine()
+	if e == nil {
+		return nil
+	}
+	list := slices.Clone(e.Benchmarks())
+
+	// log files are named miner-algorithm-group-date-time.log, and the
+	// date sorts by time
+	newest := map[string]string{}
+	entries, _ := os.ReadDir(a.logDir())
+	for _, entry := range entries {
+		name := entry.Name()
+		if len(name) < len("-20060102-150405.log") || filepath.Ext(name) != ".log" {
+			continue
+		}
+		prefix := name[:len(name)-len("-20060102-150405.log")]
+		if name > newest[prefix] {
+			newest[prefix] = name
+		}
+	}
+	for i, b := range list {
+		list[i].Log = newest[b.Miner+"-"+b.Algorithm+"-"+b.Group]
+	}
+	return list
 }
 
 func (a *App) Enable(hashKey string) {

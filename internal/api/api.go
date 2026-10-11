@@ -49,7 +49,12 @@ type Backend interface {
 	// SaveConfig validates, stores and applies a new configuration.
 	SaveConfig(cfg config.Config) error
 	Meta(ctx context.Context) Meta
-	ResetBenchmark(hashKey string)
+	// Benchmarks lists every miner program on every algorithm it knows,
+	// with what was measured.
+	Benchmarks() []engine.BenchmarkStatus
+	// ResetBenchmarks forgets measurements so that they are made again:
+	// the given ones, or a class of them (engine.ResetFailed and so on).
+	ResetBenchmarks(which string, hashKeys []string)
 	Enable(hashKey string)
 	Log() []string
 	MinerLogs() ([]LogFile, error)
@@ -185,7 +190,44 @@ func Handler(b Backend) http.Handler {
 			w.WriteHeader(http.StatusNoContent)
 		}
 	}
-	mux.HandleFunc("POST /api/benchmarks/reset", action(b.ResetBenchmark))
+	mux.HandleFunc("GET /api/benchmarks", func(w http.ResponseWriter, r *http.Request) {
+		list := b.Benchmarks()
+		if list == nil {
+			list = []engine.BenchmarkStatus{}
+		}
+		writeJSON(w, list)
+	})
+	mux.HandleFunc("POST /api/benchmarks/reset", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			HashKey  string   `json:"hash_key"`
+			HashKeys []string `json:"hash_keys"`
+			Which    string   `json:"which"`
+		}
+		if !readJSON(w, r, &req) {
+			return
+		}
+		keys := req.HashKeys
+		if req.HashKey != "" {
+			keys = append(keys, req.HashKey)
+		}
+		switch req.Which {
+		case engine.ResetFailed, engine.ResetOutdated, engine.ResetAll:
+			if len(keys) > 0 {
+				writeError(w, http.StatusBadRequest, "give either hash keys or a class, not both")
+				return
+			}
+		case "":
+			if len(keys) == 0 {
+				writeError(w, http.StatusBadRequest, "hash_key is missing")
+				return
+			}
+		default:
+			writeError(w, http.StatusBadRequest, "unknown class of benchmarks")
+			return
+		}
+		b.ResetBenchmarks(req.Which, keys)
+		w.WriteHeader(http.StatusNoContent)
+	})
 	mux.HandleFunc("POST /api/candidates/enable", action(b.Enable))
 
 	mux.HandleFunc("POST /api/pause", func(w http.ResponseWriter, r *http.Request) {

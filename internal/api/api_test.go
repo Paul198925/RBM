@@ -104,9 +104,44 @@ func (f *fakeBackend) Meta(ctx context.Context) Meta {
 		Currencies: []pool.PayoutCurrency{{Symbol: "BTC", Name: "Bitcoin"}}}
 }
 
-func (f *fakeBackend) ResetBenchmark(hashKey string) { f.reset = append(f.reset, hashKey) }
-func (f *fakeBackend) Enable(hashKey string)         { f.enabled = append(f.enabled, hashKey) }
-func (f *fakeBackend) Log() []string                 { return []string{"12:00:00 started"} }
+func (f *fakeBackend) ResetBenchmarks(which string, hashKeys []string) {
+	if which != "" {
+		f.reset = append(f.reset, "class:"+which)
+	}
+	f.reset = append(f.reset, hashKeys...)
+}
+
+func (f *fakeBackend) Enable(hashKey string) { f.enabled = append(f.enabled, hashKey) }
+
+func (f *fakeBackend) Benchmarks() []engine.BenchmarkStatus {
+	updated := time.Date(2026, 10, 11, 10, 30, 0, 0, time.UTC)
+	zero, some := 0.0, 2.5
+	until := time.Now().Add(5 * time.Hour)
+	entry := func(miner, version, algorithm, group, status string, hashrate, power float64) engine.BenchmarkStatus {
+		b := engine.BenchmarkStatus{HashKey: "hashrate/" + miner + "/" + group + "/" + algorithm, Group: group, Devices: []string{"GPU#00"},
+			Miner: miner, Version: version, Algorithm: algorithm, Status: status, Hashrate: hashrate, PowerWatts: power}
+		if hashrate > 0 {
+			b.MeasuredSeconds, b.Updated, b.RejectedPercent = 213, &updated, &zero
+			b.Log = miner + "-" + algorithm + "-" + group + "-20261011-103000.log"
+		}
+		return b
+	}
+	list := []engine.BenchmarkStatus{
+		entry("rigel", "1.23.2", "kawpow", "RTX3060", engine.BenchOK, 19.8e6, 156),
+		entry("rigel", "1.23.2", "sha512256d", "RTX3060", engine.BenchOK, 559.6e6, 150),
+		entry("wildrig", "0.51.4", "anime", "RTX3060", engine.BenchOutdated, 28.4e6, 160),
+		entry("wildrig", "0.51.4", "curve", "RTX3060", engine.BenchRunning, 0, 0),
+		entry("wildrig", "0.51.4", "firopow", "RTX3060", engine.BenchFailed, 0, 0),
+		entry("ccminer-tpfuemp", "2026.09.2", "rinhash", "RTX3060", engine.BenchPending, 0, 0),
+		entry("srbminer", "3.7.5", "phihash", "RTX3060", engine.BenchNoOffer, 0, 0),
+		entry("gminer", "3.44", "kawpow", "RTX2080SUPER", engine.BenchExcluded, 0, 0),
+	}
+	list[2].MeasuredVersion, list[2].RejectedPercent = "0.50.9", &some
+	list[3].MeasuredSeconds = 32
+	list[4].FailedUntil = &until
+	return list
+}
+func (f *fakeBackend) Log() []string { return []string{"12:00:00 started"} }
 
 func (f *fakeBackend) MinerLogs() ([]LogFile, error) {
 	return []LogFile{{Name: "rigel-kawpow.log", Size: 2048}}, nil
@@ -283,6 +318,41 @@ func TestConfigSaveRejects(t *testing.T) {
 	b.saveErr = errors.New("unknown miner \"nope\"")
 	if w := do(b, request{method: http.MethodPut, path: "/api/config", body: `{}`}); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "unknown miner") {
 		t.Errorf("%d %s", w.Code, w.Body)
+	}
+}
+
+func TestBenchmarks(t *testing.T) {
+	b := newBackend()
+	body := do(b, request{path: "/api/benchmarks"}).Body.String()
+	for _, want := range []string{`"status":"outdated"`, `"measured_version":"0.50.9"`, `"rejected_percent":2.5`, `"status":"no offer"`,
+		`"log":"rigel-kawpow-RTX3060-20261011-103000.log"`, `"failed_until":"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("benchmarks miss %s: %.300s", want, body)
+		}
+	}
+
+	post := func(body string) int {
+		return do(b, request{method: http.MethodPost, path: "/api/benchmarks/reset", body: body}).Code
+	}
+	if code := post(`{"hash_keys":["a","b"]}`); code != http.StatusNoContent {
+		t.Errorf("several keys: %d", code)
+	}
+	for _, which := range []string{"failed", "outdated", "all"} {
+		if code := post(`{"which":"` + which + `"}`); code != http.StatusNoContent {
+			t.Errorf("class %s: %d", which, code)
+		}
+	}
+	if got := strings.Join(b.reset, " "); got != "a b class:failed class:outdated class:all" {
+		t.Errorf("resets = %q", got)
+	}
+	for name, body := range map[string]string{
+		"nothing":       `{}`,
+		"unknown class": `{"which":"everything"}`,
+		"both":          `{"which":"all","hash_key":"a"}`,
+	} {
+		if code := post(body); code != http.StatusBadRequest {
+			t.Errorf("%s: %d", name, code)
+		}
 	}
 }
 

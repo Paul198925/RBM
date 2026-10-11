@@ -66,6 +66,21 @@ main { flex: 1; min-width: 0; overflow-y: auto; padding: 22px 28px 60px; }
 .topbar .item .value { font-family: var(--mono); font-weight: 600; }
 .topbar .spacer { flex: 1; }
 button.warn { background: var(--warn); border-color: var(--warn); color: #201600; font-weight: 600; }
+.actions { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; margin-bottom: 8px; }
+.action { display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.action h3 { margin: 0; padding: 11px 15px; font-size: 15px; background: var(--panel-2); border-bottom: 1px solid var(--line); }
+.action p { margin: 0; padding: 11px 15px 0; font-size: 13px; color: var(--muted); flex: 1; }
+.action .go { padding: 13px 15px; }
+button.danger { background: var(--bad); border-color: var(--bad); color: #fff; font-weight: 600; }
+th.sortable { cursor: pointer; user-select: none; }
+th.sortable:hover { color: var(--text); }
+tr.filters th { padding: 5px 8px; background: var(--panel); }
+tr.filters input, tr.filters select { width: 100%; min-width: 70px; padding: 3px 6px; font-size: 12px; }
+td.check, th.check { width: 28px; padding-right: 0; }
+.badge.ok { background: rgba(63, 196, 122, .16); color: var(--good); }
+.badge.outdated, .badge.pending { background: rgba(230, 178, 60, .14); color: var(--warn); }
+.badge.failed { background: rgba(239, 100, 97, .14); color: var(--bad); }
+.badge.nooffer, .badge.nofit, .badge.excluded { background: var(--panel-2); color: var(--muted); }
 td.hot { color: var(--bad); font-weight: 600; }
 td.warm { color: var(--warn); }
 .badge.crashed, .badge.nohashrate { background: rgba(239, 100, 97, .14); color: var(--bad); }

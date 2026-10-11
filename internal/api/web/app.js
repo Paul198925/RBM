@@ -111,11 +111,15 @@ const state = {
   minerLog: { name: '', text: '' },
   balances: { balances: [] },
   activity: [],
+  benchmarks: [],
+  benchSelected: new Set(),
+  benchFilter: { miner: '', algorithm: '', group: '', status: '' },
+  benchSort: { key: 'miner', dir: 1 },
   offerFilter: '',
   offerMineOnly: true,
 };
 
-const PAGES = { '': 'dashboard', miners: 'miners', pools: 'pools', activity: 'activity', config: 'config', logs: 'logs' };
+const PAGES = { '': 'dashboard', miners: 'miners', benchmarks: 'benchmarks', pools: 'pools', activity: 'activity', config: 'config', logs: 'logs' };
 
 function fiat(btc) {
   const s = state.status;
@@ -371,6 +375,123 @@ async function enableCandidate(hashKey) {
     await api('/api/candidates/enable', { method: 'POST', body: { hash_key: hashKey } });
     toast('Enabled again');
     setTimeout(refreshStatus, 1500);
+  } catch (e) { toast(e.message, true); }
+}
+
+// ------------------------------------------------------------ benchmarks
+
+const BENCH_STATUS = {
+  'ok': 'measured',
+  'outdated': 'measured with an older version of the miner',
+  'benchmarking': 'being measured right now',
+  'pending': 'not measured yet',
+  'failed': 'taken out after failures',
+  'no offer': 'the pool pays nothing for it at the moment, so it cannot be measured',
+  'no fit': 'the card has too little memory for it',
+  'excluded': 'switched off in the configuration',
+};
+
+function benchRows() {
+  const f = state.benchFilter;
+  const has = (value, needle) => !needle || value.toLowerCase().includes(needle.trim().toLowerCase());
+  const { key, dir } = state.benchSort;
+  return state.benchmarks
+    .filter(b => has(b.miner, f.miner) && has(b.algorithm, f.algorithm) && has(b.group, f.group) && (!f.status || b.status === f.status))
+    .sort((a, b) => {
+      const x = a[key] === undefined || a[key] === null ? '' : a[key];
+      const y = b[key] === undefined || b[key] === null ? '' : b[key];
+      const order = typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y));
+      return dir * order || a.hash_key.localeCompare(b.hash_key);
+    });
+}
+
+function renderBenchmarks() {
+  const all = state.benchmarks;
+  const count = status => all.filter(b => b.status === status).length;
+  // only what was measured or has failed can be measured again
+  const resettable = b => b.measured_seconds > 0 || b.status === 'failed';
+  const measured = all.filter(resettable).length;
+
+  const action = (title, text, label, cls, n, run) => h('div', { class: 'action' },
+    h('h3', {}, title), h('p', {}, text),
+    h('div', { class: 'go' }, h('button', { class: cls, disabled: n === 0, onclick: run }, label + (n ? '  (' + n + ')' : ''))));
+  const actions = h('div', { class: 'actions' },
+    action('Benchmark updated miners',
+      'Forget the figures that were measured with an older version of a miner program than the one installed now. A new version can be faster or slower.',
+      'Benchmark updated miners', 'primary', count('outdated'),
+      () => resetBenchmarks({ which: 'outdated' }, 'Measure the ' + count('outdated') + ' benchmarks of updated miners again?')),
+    action('Benchmark failed miners',
+      'Let the miners back in that were taken out after crashes or a benchmark without hashrate, and measure them again. Watch them: what failed once may fail again.',
+      'Benchmark failed miners', 'primary', count('failed'),
+      () => resetBenchmarks({ which: 'failed' }, 'Try the ' + count('failed') + ' failed benchmarks again?')),
+    action('Reset all benchmarks',
+      'Forget everything that was measured. Do this after changing hardware, drivers or overclocking. Measuring everything again takes hours, and until then nothing is mined for profit.',
+      'Benchmark all miners', 'danger', measured,
+      () => resetBenchmarks({ which: 'all' }, 'Really forget all ' + measured + ' measurements? Measuring everything again takes hours.')));
+
+  const rows = benchRows();
+  const visible = rows.filter(resettable).map(b => b.hash_key);
+  const selected = visible.filter(k => state.benchSelected.has(k));
+  const sortable = (label, key, cls) => h('th', { class: 'sortable ' + (cls || ''), onclick: () => {
+    state.benchSort = { key, dir: state.benchSort.key === key ? -state.benchSort.dir : 1 };
+    render();
+  } }, label + (state.benchSort.key === key ? (state.benchSort.dir > 0 ? '  ▲' : '  ▼') : ''));
+  const filter = key => h('input', { type: 'search', value: state.benchFilter[key], 'data-filter': key,
+    oninput: e => { state.benchFilter[key] = e.target.value; rerenderKeepingFocus(e.target); } });
+
+  const table = h('div', { class: 'scroll' }, h('table', {},
+    h('thead', {},
+      h('tr', {},
+        h('th', { class: 'check' }, h('input', { type: 'checkbox', title: 'Select all shown',
+          checked: visible.length > 0 && selected.length === visible.length,
+          onchange: e => { for (const k of visible) e.target.checked ? state.benchSelected.add(k) : state.benchSelected.delete(k); render(); } })),
+        sortable('Name', 'miner'), sortable('Algorithm', 'algorithm'), sortable('Device', 'group'),
+        sortable('Speed', 'hashrate', 'num'), h('th', { class: 'num' }, 'Rejected'), sortable('Power', 'power_watts', 'num'),
+        sortable('Status', 'status'), sortable('Date', 'updated'), h('th', {}, 'Log')),
+      h('tr', { class: 'filters' },
+        h('th', {}), h('th', {}, filter('miner')), h('th', {}, filter('algorithm')), h('th', {}, filter('group')),
+        h('th', {}), h('th', {}), h('th', {}),
+        h('th', {}, h('select', { onchange: e => { state.benchFilter.status = e.target.value; render(); } },
+          h('option', { value: '' }, 'all'),
+          Object.keys(BENCH_STATUS).map(s => h('option', { value: s, selected: state.benchFilter.status === s }, s)))),
+        h('th', {}), h('th', {}))),
+    h('tbody', {}, rows.map(b => {
+      let status = b.status;
+      if (b.status === 'pending' && b.measured_seconds > 0) status = 'pending  ' + Math.round(b.measured_seconds) + ' of ' + Math.round(state.status.benchmark_seconds) + ' s';
+      if (b.status === 'benchmarking') status = 'benchmarking  ' + Math.round(b.measured_seconds) + ' of ' + Math.round(state.status.benchmark_seconds) + ' s';
+      if (b.status === 'failed' && b.failed_until) status = 'failed, again in ' + fmtUntil(b.failed_until);
+      if (b.status === 'outdated') status = 'outdated (v' + b.measured_version + ')';
+      return h('tr', { class: b.status === 'benchmarking' ? 'running' : '' },
+        h('td', { class: 'check' }, resettable(b) ? h('input', { type: 'checkbox', checked: state.benchSelected.has(b.hash_key),
+          onchange: e => { e.target.checked ? state.benchSelected.add(b.hash_key) : state.benchSelected.delete(b.hash_key); render(); } }) : null),
+        h('td', {}, b.miner, h('small', { class: 'help' }, '  ' + b.version)),
+        h('td', {}, b.algorithm),
+        h('td', { title: b.devices.join(', ') }, b.group),
+        h('td', { class: 'num' }, fmtHash(b.hashrate)),
+        h('td', { class: 'num' + (b.rejected_percent > 5 ? ' hot' : '') }, b.rejected_percent === undefined ? '-' : b.rejected_percent.toFixed(2).replace(/[.]?0+$/, '') + ' %'),
+        h('td', { class: 'num' }, fmtWatts(b.power_watts)),
+        h('td', {}, h('span', { class: 'badge ' + b.status.replace(/ /g, ''), title: BENCH_STATUS[b.status] || '' }, status)),
+        h('td', {}, b.updated ? new Date(b.updated).toLocaleString() : '-'),
+        h('td', {}, b.log ? h('a', { href: '#/logs', title: b.log, onclick: () => { state.minerLog = { name: b.log, text: '' }; loadMinerLog(b.log); } }, 'log') : ''));
+    }))));
+
+  return h('div', {}, h('h1', {}, 'Manage Miner Benchmarks'), actions,
+    h('h2', {}, 'Benchmark status', h('small', {}, rows.length + ' of ' + all.length + ' shown')),
+    h('div', { class: 'toolbar' },
+      h('button', { class: 'primary', disabled: selected.length === 0,
+        onclick: () => resetBenchmarks({ hash_keys: selected }, 'Measure the ' + selected.length + ' selected benchmarks again?') },
+        'Benchmark selected' + (selected.length ? '  (' + selected.length + ')' : '')),
+      h('span', { class: 'help' }, 'A miner on an algorithm is measured once per device group; the figure counts for every coin and pool. The list is brought up to date once per round.')),
+    all.length ? table : h('div', { class: 'empty' }, 'Nothing yet. The list appears with the first round of the engine.'));
+}
+
+async function resetBenchmarks(body, question) {
+  if (!confirm(question)) return;
+  try {
+    await api('/api/benchmarks/reset', { method: 'POST', body });
+    state.benchSelected.clear();
+    toast('Will be measured again');
+    setTimeout(refreshStatus, 2000);
   } catch (e) { toast(e.message, true); }
 }
 
@@ -671,6 +792,7 @@ async function refreshStatus() {
       state.balances = await api('/api/balances');
     }
     if (state.page === 'activity') state.activity = await api('/api/activity');
+    if (state.page === 'benchmarks') state.benchmarks = await api('/api/benchmarks');
     if (state.page === 'pools') state.offers = await api('/api/offers');
     if (state.page === 'logs') {
       state.log = await api('/api/log');
@@ -694,13 +816,14 @@ async function loadConfig() {
 
 function rerenderKeepingFocus(input) {
   const pos = input.selectionStart;
+  const key = input.getAttribute('data-filter');
   render();
-  const again = document.querySelector('input[type=search]');
+  const again = key ? document.querySelector('input[data-filter="' + key + '"]') : document.querySelector('input[type=search]');
   if (again) { again.focus(); again.setSelectionRange(pos, pos); }
 }
 
 function render() {
-  const view = { dashboard: renderDashboard, miners: renderMiners, pools: renderPools, activity: renderActivity, config: renderConfig, logs: renderLogs }[state.page]();
+  const view = { dashboard: renderDashboard, miners: renderMiners, benchmarks: renderBenchmarks, pools: renderPools, activity: renderActivity, config: renderConfig, logs: renderLogs }[state.page]();
   document.getElementById('page').replaceChildren(view);
   for (const a of document.querySelectorAll('#nav a')) a.classList.toggle('active', a.dataset.page === state.page);
 }

@@ -218,6 +218,15 @@ func TestMinerLogs(t *testing.T) {
 	}
 }
 
+func TestBenchmarksWithoutAnEngine(t *testing.T) {
+	app, _ := testApp(t)
+	if list := app.Benchmarks(); len(list) != 0 {
+		t.Errorf("benchmarks = %+v", list)
+	}
+	// nothing to reset, nothing breaks
+	app.ResetBenchmarks("all", nil)
+}
+
 func TestMetaListsTheMiners(t *testing.T) {
 	app, _ := testApp(t)
 	// keep the test off the network: pretend the pool was asked just now
