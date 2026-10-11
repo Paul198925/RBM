@@ -116,3 +116,34 @@ func (srbminerAPI) Poll(ctx context.Context, port int) (Sample, error) {
 	}
 	return sample, nil
 }
+
+// gminerAPI reads GMiner's /stat document, which lists its figures per card.
+type gminerAPI struct{}
+
+type gminerStat struct {
+	Devices []struct {
+		Speed    float64 `json:"speed"`
+		Accepted int64   `json:"accepted_shares"`
+		Rejected int64   `json:"rejected_shares"`
+		Stale    int64   `json:"stale_shares"`
+		Power    float64 `json:"power_usage"`
+	} `json:"devices"`
+}
+
+func (gminerAPI) Poll(ctx context.Context, port int) (Sample, error) {
+	var stat gminerStat
+	if err := getJSON(ctx, port, "/stat", &stat); err != nil {
+		return Sample{}, err
+	}
+	var total AlgoSample
+	sample := Sample{Time: time.Now()}
+	for _, d := range stat.Devices {
+		total.Hashrate += d.Speed
+		total.Accepted += d.Accepted
+		total.Rejected += d.Rejected
+		total.Invalid += d.Stale
+		sample.PowerWatts += d.Power
+	}
+	sample.Algorithms = map[string]AlgoSample{"": total}
+	return sample, nil
+}

@@ -593,7 +593,7 @@ func (e *Engine) options(g *group, now time.Time) ([]option, error) {
 	var options []option
 	for _, name := range miner.Names(e.deps.Definitions) {
 		def := e.deps.Definitions[name]
-		if def.Vendor != g.vendor {
+		if def.Vendor != g.vendor || !def.Available() {
 			continue
 		}
 		for _, a := range def.Algorithms {

@@ -1,0 +1,64 @@
+# SRBMiner-Multi on the CPU. The same program as srbminer, installed a second
+# time under this name. https://github.com/doktor83/SRBMiner-Multi
+name: srbminer-cpu
+version: 3.7.5
+api: srbminer
+vendor: CPU
+fee: 0.85
+
+downloads:
+  windows:
+    url: https://github.com/doktor83/SRBMiner-Multi/releases/download/3.7.5/SRBMiner-Multi-3-7-5-win64.zip
+    sha256: 11cb5d07819f626ae349931dacc85734c29177bcf6a946309d10c8ab11848e80
+    executable: SRBMiner-MULTI.exe
+  linux:
+    url: https://github.com/doktor83/SRBMiner-Multi/releases/download/3.7.5/SRBMiner-Multi-3-7-5-Linux.tar.gz
+    sha256: f18e33dac31d4fd5c6909409d7a82793477e8b93c63b897c7a19befff0c33ca8
+    executable: SRBMiner-MULTI
+
+args:
+  - --algorithm
+  - "{algo}"
+  - --pool
+  - "{host}:{port}"
+  - --wallet
+  - "{user}"
+  - --password
+  - "{pass}"
+  - --tls
+  - "{tls_bool}"
+  - --disable-gpu
+  - --retry-time
+  - "10"
+  - --disable-startup-monitor
+  - --api-enable
+  - --api-port
+  - "{api_port}"
+
+# added when the number of threads is limited in the configuration
+threads_args:
+  - --cpu-threads
+  - "{threads}"
+
+# A selection of what zpool.ca offers for CPUs.
+algorithms:
+  - name: flex
+    fee: 2.0
+  - name: ghostrider
+  - name: mike
+  - name: minotaurx
+  - name: power2b
+    miner_name: yespower2b
+  - name: rinhash
+    fee: 1.0
+  - name: verushash
+  - name: yescrypt
+  - name: yescryptr8
+  - name: yescryptr16
+  - name: yescryptr32
+  - name: yespower
+  - name: yespowerr16
+  - name: yespowersugar
+  - name: yespowertide
+  - name: yespowerurx
+    fee: 0

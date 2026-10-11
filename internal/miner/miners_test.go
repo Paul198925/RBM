@@ -29,12 +29,14 @@ func TestAllBuiltinDefinitionsAreComplete(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := Names(defs); !reflect.DeepEqual(got, []string{"ccminer-tpfuemp", "rigel", "srbminer", "wildrig", "xmrig"}) {
+	if got := Names(defs); !reflect.DeepEqual(got, []string{"ccminer-tpfuemp", "gminer", "rigel", "srbminer", "srbminer-cpu", "wildrig", "xmrig"}) {
 		t.Errorf("definitions = %v", got)
 	}
+	// miners that do not exist for every system, on purpose
+	windowsOnly := map[string]bool{"gminer": true}
 	for name, def := range defs {
 		for _, goos := range []string{"windows", "linux"} {
-			if _, ok := def.Downloads[goos]; !ok {
+			if _, ok := def.Downloads[goos]; !ok && !(goos == "linux" && windowsOnly[name]) {
 				t.Errorf("%s has no download for %s", name, goos)
 			}
 		}

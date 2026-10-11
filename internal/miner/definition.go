@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io/fs"
 	"regexp"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -185,6 +186,13 @@ func (d *Definition) Algorithm(name string) (Algorithm, bool) {
 	return Algorithm{}, false
 }
 
+// Available reports whether the miner program exists for the operating
+// system this program runs on.
+func (d *Definition) Available() bool {
+	_, ok := d.Downloads[runtime.GOOS]
+	return ok
+}
+
 // SupportsTLS reports whether the miner can be started with a TLS
 // connection to the pool.
 func (d *Definition) SupportsTLS() bool {
@@ -223,7 +231,10 @@ type Job struct {
 	Threads int
 }
 
-var placeholderRE = regexp.MustCompile(`\{[a-z_]+\}`)
+var placeholderRE = regexp.MustCompile(`\{[a-z_0-9]+\}`)
+
+// deviceList is an argument that stands for one argument per device.
+const deviceList = "{device_list}"
 
 // BuildArgs fills the placeholders of the argument template for job.
 func (d *Definition) BuildArgs(job Job) ([]string, error) {
@@ -233,9 +244,9 @@ func (d *Definition) BuildArgs(job Job) ([]string, error) {
 		template = append(template, d.ThreadsArgs...)
 	}
 
-	scheme, tls, tlsBool := d.Scheme, "off", "false"
+	scheme, tls, tlsBool, tls01 := d.Scheme, "off", "false", "0"
 	if job.TLS {
-		scheme, tls, tlsBool = d.SchemeTLS, "on", "true"
+		scheme, tls, tlsBool, tls01 = d.SchemeTLS, "on", "true", "1"
 	}
 	indexes := make([]string, len(job.DeviceIndexes))
 	for i, index := range job.DeviceIndexes {
@@ -248,6 +259,7 @@ func (d *Definition) BuildArgs(job Job) ([]string, error) {
 		"{scheme}":   scheme,
 		"{tls}":      tls,
 		"{tls_bool}": tlsBool,
+		"{tls_01}":   tls01,
 		"{host}":     job.Host,
 		"{port}":     strconv.Itoa(job.Port),
 		"{user}":     job.User,
@@ -256,10 +268,15 @@ func (d *Definition) BuildArgs(job Job) ([]string, error) {
 	}
 
 	var problems []string
-	args := make([]string, len(template))
-	for i, arg := range template {
+	args := make([]string, 0, len(template)+len(indexes))
+	for _, arg := range template {
+		// some miners want every device as an argument of its own
+		if arg == deviceList {
+			args = append(args, indexes...)
+			continue
+		}
 		// one pass, so a value that happens to contain braces is not expanded again
-		args[i] = placeholderRE.ReplaceAllStringFunc(arg, func(ph string) string {
+		args = append(args, placeholderRE.ReplaceAllStringFunc(arg, func(ph string) string {
 			v, ok := values[ph]
 			switch {
 			case !ok:
@@ -268,7 +285,7 @@ func (d *Definition) BuildArgs(job Job) ([]string, error) {
 				problems = append(problems, "no scheme defined for this connection")
 			}
 			return v
-		})
+		}))
 	}
 	if len(problems) > 0 {
 		return nil, errors.New(d.Name + ": " + strings.Join(problems, ", "))

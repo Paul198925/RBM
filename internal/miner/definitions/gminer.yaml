@@ -1,0 +1,59 @@
+# GMiner, a closed-source GPU miner, used here for NVIDIA cards.
+# https://github.com/develsoftware/GMinerRelease
+#
+# Windows only for now: the Linux build comes as .tar.xz, which the installer
+# cannot unpack. The project publishes no checksums; the one below was taken
+# from the archive on the official release page on 2026-10-11.
+name: gminer
+version: "3.44"
+api: gminer
+vendor: NVIDIA
+fee: 2.0
+
+downloads:
+  windows:
+    url: https://github.com/develsoftware/GMinerRelease/releases/download/3.44/gminer_3_44_windows64.zip
+    sha256: dfa02b289f555d7055342967b1d1c390f5c93108c2b73beee1853ce0281bbe04
+    executable: miner.exe
+
+args:
+  - --algo
+  - "{algo}"
+  - --server
+  - "{host}:{port}"
+  - --user
+  - "{user}"
+  - --pass
+  - "{pass}"
+  - --ssl
+  - "{tls_01}"
+  # one argument per card
+  - --devices
+  - "{device_list}"
+  - --cuda
+  - "1"
+  - --opencl
+  - "0"
+  - --api
+  - "{api_port}"
+  # no restart on its own and no power efficiency calculator: rbm does both
+  - --watchdog
+  - "0"
+  - --pec
+  - "0"
+
+algorithms:
+  # Equihash 144,5: which coin is mined decides a parameter of the
+  # algorithm, the miner takes it from the pool
+  - name: equihash144
+    miner_name: "144_5"
+    min_memory_mib: 2048
+    args: ["--pers", "auto"]
+  - name: kawpow
+    min_memory_mib: 6144
+  # zpool's sccpow port is FiroPoW with the smaller DAG of the coin SCC
+  - name: sccpow
+    miner_name: firo
+    min_memory_mib: 6144
+  - name: sha512256d
+    miner_name: radiant

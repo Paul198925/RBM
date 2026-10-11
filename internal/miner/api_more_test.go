@@ -152,3 +152,74 @@ func TestNewMinerDefinitions(t *testing.T) {
 		}
 	}
 }
+
+func TestGminerPoll(t *testing.T) {
+	api, err := NewAPI("gminer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	stat := `{"miner": "GMiner 3.44", "algorithm": "Equihash 144,5 \"auto\"", "uptime": 600, "devices": [
+		{"gpu_id": 0, "name": "RTX 3060", "speed": 58, "accepted_shares": 20, "rejected_shares": 1, "stale_shares": 0, "power_usage": 110},
+		{"gpu_id": 1, "name": "RTX 2080 SUPER", "speed": 71.5, "accepted_shares": 25, "rejected_shares": 0, "stale_shares": 2, "power_usage": 180}]}`
+	sample, err := api.Poll(context.Background(), serveMiner(t, "/stat", stat))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := AlgoSample{Hashrate: 129.5, Accepted: 45, Rejected: 1, Invalid: 2}
+	if sample.For("144_5") != want || sample.PowerWatts != 290 {
+		t.Errorf("sample = %+v, power %v", sample.For("144_5"), sample.PowerWatts)
+	}
+	// before the cards are initialised the list is empty
+	if sample, err := api.Poll(context.Background(), serveMiner(t, "/stat", `{"devices": []}`)); err != nil || sample.For("x").Hashrate != 0 {
+		t.Errorf("starting miner: %+v, %v", sample, err)
+	}
+}
+
+func TestGminerAndCPUDefinitions(t *testing.T) {
+	gminer := builtin1(t, "gminer")
+	equihash, ok := gminer.Algorithm("equihash144")
+	if !ok || gminer.FeePercent(equihash) != 2 {
+		t.Fatalf("equihash144 = %+v, %v", equihash, ok)
+	}
+	args, err := gminer.BuildArgs(Job{Algorithm: equihash, DeviceIndexes: []int{0, 1}, APIPort: 4500,
+		Host: "equihash144.eu.mine.zpool.ca", Port: 2144, TLS: true, User: "wallet1", Pass: "rig1,c=RVN"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	line := strings.Join(args, " ")
+	// every card is an argument of its own, and the algorithm's extras follow
+	for _, want := range []string{"--algo 144_5", "--server equihash144.eu.mine.zpool.ca:2144", "--ssl 1", "--devices 0 1 --cuda 1",
+		"--api 4500", "--pers auto"} {
+		if !strings.Contains(line, want) {
+			t.Errorf("%q is missing in %q", want, line)
+		}
+	}
+	for i, arg := range args {
+		if arg == "--devices" && (args[i+1] != "0" || args[i+2] != "1") {
+			t.Errorf("devices are not separate arguments: %q", args)
+		}
+	}
+	if sccpow, _ := gminer.Algorithm("sccpow"); sccpow.NameForMiner() != "firo" {
+		t.Errorf("sccpow is called %q", sccpow.NameForMiner())
+	}
+
+	cpu := builtin1(t, "srbminer-cpu")
+	if cpu.Vendor != VendorCPU {
+		t.Fatalf("vendor = %q", cpu.Vendor)
+	}
+	power2b, _ := cpu.Algorithm("power2b")
+	args, err = cpu.BuildArgs(Job{Algorithm: power2b, APIPort: 4600, Host: "power2b.eu.mine.zpool.ca", Port: 6242,
+		User: "wallet1", Pass: "rig1,c=RVN", Threads: 12})
+	if err != nil {
+		t.Fatal(err)
+	}
+	line = strings.Join(args, " ")
+	for _, want := range []string{"--algorithm yespower2b", "--disable-gpu", "--tls false", "--api-port 4600", "--cpu-threads 12"} {
+		if !strings.Contains(line, want) {
+			t.Errorf("%q is missing in %q", want, line)
+		}
+	}
+	if strings.Contains(line, "--gpu-id") {
+		t.Errorf("a cpu miner got a gpu list: %q", line)
+	}
+}
