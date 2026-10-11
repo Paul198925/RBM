@@ -1,0 +1,38 @@
+# Copy this file to config.yaml and fill in your wallet.
+# config.yaml is ignored by git.
+
+# name of this rig at the pools: letters, digits, '-' and '_'
+worker: GoTest
+
+# miner binaries, logs and the stats database go here
+data_dir: data
+
+zpool:
+  # zpool pays everything out in one coin of your choice, whatever is mined.
+  # "rbm currencies" lists the coins it can pay in (BTC, LTC, DOGE, RVN, ...).
+  currency: RVN
+  # payout address - it must be an address of the coin chosen above
+  wallet: "RUCgLqj1JjeP9rX35zWUunejxTAokEr9qB"
+  # stratum servers: na, eu, sea or jp
+  region: eu
+  # connect to the stratum servers with TLS
+  tls: false
+
+# Electricity. With a price of 0 it is not counted. Otherwise the cost of the
+# measured power draw is taken off the earnings, and a miner that costs more
+# than it earns is not started.
+power:
+  price_per_kwh: 0
+  currency: EUR
+
+switching:
+  # length of a round: how often the choice of miner is reconsidered
+  interval: 1m
+  # another miner must earn this much more before the running one is stopped
+  hysteresis_percent: 5
+  # a started miner is left alone for at least this long
+  min_run_time: 5m
+  # measured mining time a miner needs before its hashrate is trusted
+  benchmark_time: 3m
+  # keep mining when electricity costs more than is earned
+  mine_at_loss: false
