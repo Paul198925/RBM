@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"embed"
+	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"io"
@@ -13,12 +14,15 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"time"
 
 	"rbm/internal/config"
 	"rbm/internal/device"
 	"rbm/internal/engine"
 	"rbm/internal/pool"
+	"rbm/internal/stats"
+	"rbm/internal/sysinfo"
 )
 
 //go:embed web
@@ -33,8 +37,14 @@ type Backend interface {
 	// Waiting says why nothing is mined, empty while the engine runs.
 	Waiting() string
 	Status() engine.Status
-	Devices() []device.Device
+	System() System
+	// SetPaused stops all mining or takes it up again.
+	SetPaused(paused bool)
+	Devices() []DeviceStatus
 	Offers() []pool.Offer
+	Balances() BalanceInfo
+	// Activity returns the miner runs of the last days, newest first.
+	Activity() ([]stats.Run, error)
 	Config() config.Config
 	// SaveConfig validates, stores and applies a new configuration.
 	SaveConfig(cfg config.Config) error
@@ -44,6 +54,30 @@ type Backend interface {
 	Log() []string
 	MinerLogs() ([]LogFile, error)
 	MinerLog(name string) (string, error)
+}
+
+// System describes the application and the machine it runs on.
+type System struct {
+	Started time.Time `json:"started"`
+	Paused  bool      `json:"paused"`
+	// Memory is nil if it could not be read.
+	Memory *sysinfo.Memory `json:"memory,omitempty"`
+}
+
+// DeviceStatus is a device with what it reports about itself right now.
+type DeviceStatus struct {
+	device.Device
+	// Telemetry is nil for devices that report nothing, like the CPU.
+	Telemetry *device.Telemetry `json:"telemetry,omitempty"`
+	// MaxTemperatureC is the highest temperature seen since the start.
+	MaxTemperatureC float64 `json:"max_temperature_c,omitempty"`
+}
+
+// BalanceInfo is what the pools hold for the configured wallets.
+type BalanceInfo struct {
+	Balances []pool.Balance `json:"balances"`
+	// Error says why a balance is missing or old, empty if all is well.
+	Error string `json:"error,omitempty"`
 }
 
 // Meta is what the interface needs to know to offer sensible choices.
@@ -74,6 +108,7 @@ type LogFile struct {
 
 type statusResponse struct {
 	Waiting string `json:"waiting"`
+	System  System `json:"system"`
 	engine.Status
 }
 
@@ -95,7 +130,7 @@ func Handler(b Backend) http.Handler {
 		if status.Groups == nil {
 			status.Groups = []engine.GroupStatus{}
 		}
-		writeJSON(w, statusResponse{Waiting: b.Waiting(), Status: status})
+		writeJSON(w, statusResponse{Waiting: b.Waiting(), System: b.System(), Status: status})
 	})
 	mux.HandleFunc("GET /api/devices", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, b.Devices())
@@ -152,6 +187,63 @@ func Handler(b Backend) http.Handler {
 	}
 	mux.HandleFunc("POST /api/benchmarks/reset", action(b.ResetBenchmark))
 	mux.HandleFunc("POST /api/candidates/enable", action(b.Enable))
+
+	mux.HandleFunc("POST /api/pause", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Paused *bool `json:"paused"`
+		}
+		if !readJSON(w, r, &req) {
+			return
+		}
+		if req.Paused == nil {
+			writeError(w, http.StatusBadRequest, "paused is missing")
+			return
+		}
+		b.SetPaused(*req.Paused)
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	mux.HandleFunc("GET /api/balances", func(w http.ResponseWriter, r *http.Request) {
+		info := b.Balances()
+		if info.Balances == nil {
+			info.Balances = []pool.Balance{}
+		}
+		writeJSON(w, info)
+	})
+
+	mux.HandleFunc("GET /api/activity", func(w http.ResponseWriter, r *http.Request) {
+		runs, err := b.Activity()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if runs == nil {
+			runs = []stats.Run{}
+		}
+		writeJSON(w, runs)
+	})
+	mux.HandleFunc("GET /api/activity.csv", func(w http.ResponseWriter, r *http.Request) {
+		runs, err := b.Activity()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+		w.Header().Set("Content-Disposition", `attachment; filename="rbm-activity.csv"`)
+		out := csv.NewWriter(w)
+		out.Write([]string{"started", "ended", "minutes", "group", "miner", "algorithm", "pool", "coin", "benchmark", "end",
+			"hashrate", "earned_btc", "energy_kwh", "accepted", "rejected"})
+		for _, run := range runs {
+			out.Write([]string{
+				run.Started.Format(time.RFC3339), run.Ended.Format(time.RFC3339),
+				strconv.FormatFloat(run.Ended.Sub(run.Started).Minutes(), 'f', 1, 64),
+				run.Group, run.Miner, run.Algorithm, run.Pool, run.Coin, strconv.FormatBool(run.Benchmark), run.End,
+				strconv.FormatFloat(run.Hashrate, 'f', 2, 64), strconv.FormatFloat(run.EarnedBTC, 'g', -1, 64),
+				strconv.FormatFloat(run.EnergyKWh, 'f', 4, 64), strconv.FormatInt(run.Accepted, 10), strconv.FormatInt(run.Rejected, 10),
+			})
+		}
+		out.Flush()
+	})
 
 	mux.HandleFunc("GET /api/log", func(w http.ResponseWriter, r *http.Request) {
 		lines := b.Log()

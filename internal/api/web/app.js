@@ -109,16 +109,73 @@ const state = {
   log: [],
   minerLogs: [],
   minerLog: { name: '', text: '' },
+  balances: { balances: [] },
+  activity: [],
   offerFilter: '',
   offerMineOnly: true,
 };
 
-const PAGES = { '': 'dashboard', miners: 'miners', pools: 'pools', config: 'config', logs: 'logs' };
+const PAGES = { '': 'dashboard', miners: 'miners', pools: 'pools', activity: 'activity', config: 'config', logs: 'logs' };
 
 function fiat(btc) {
   const s = state.status;
   if (!s || !s.btc_price || !btc) return '';
   return (btc * s.btc_price).toFixed(2) + ' ' + s.currency;
+}
+
+function fmtGB(mib) { return (mib / 1024).toFixed(1) + ' GB'; }
+
+function fmtDuration(seconds) {
+  seconds = Math.max(0, Math.round(seconds));
+  const d = Math.floor(seconds / 86400);
+  const hrs = Math.floor((seconds % 86400) / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  if (d) return d + 'd ' + hrs + 'h ' + m + 'm';
+  if (hrs) return hrs + 'h ' + m + 'm';
+  return m + 'm';
+}
+
+function totals() {
+  let profit = 0, power = 0, mining = 0;
+  for (const g of state.status.groups) {
+    if (g.state !== 'idle') { mining++; power += g.power_watts; }
+    profit += g.profit_btc_per_day || 0;
+  }
+  return { profit, power, mining };
+}
+
+// --------------------------------------------------------------- top bar
+
+function topItem(label, value) {
+  return h('div', { class: 'item' }, h('div', { class: 'label' }, label), h('div', { class: 'value' }, value));
+}
+
+function renderTopbar() {
+  const s = state.status;
+  const bar = document.getElementById('topbar');
+  if (!s) { bar.replaceChildren(); return; }
+  const t = totals();
+  const paused = s.system.paused;
+  const memory = s.system.memory;
+  bar.replaceChildren(
+    topItem('Profit per day', fmtBTC(t.profit) === '-' ? '-' : fmtBTC(t.profit) + ' BTC' + (fiat(t.profit) ? '  =  ' + fiat(t.profit) : '')),
+    topItem('Power', fmtWatts(t.power)),
+    topItem('Mining', t.mining + ' of ' + s.groups.length + ' groups'),
+    memory ? topItem('Free memory', fmtGB(memory.commit_free_mib) + ' of ' + fmtGB(memory.commit_limit_mib)) : null,
+    topItem('Uptime', fmtDuration((Date.now() - new Date(s.system.started).getTime()) / 1000)),
+    h('div', { class: 'spacer' }),
+    h('button', { class: paused ? 'primary' : 'warn', onclick: () => setPaused(!paused),
+      title: paused ? 'Start the miners again' : 'Stop all miners, keep rbm running' }, paused ? 'Resume mining' : 'Pause mining'));
+}
+
+async function setPaused(paused) {
+  try {
+    await api('/api/pause', { method: 'POST', body: { paused } });
+    toast(paused ? 'Mining is paused' : 'Mining continues');
+    state.status.system.paused = paused;
+    renderTopbar();
+    setTimeout(refreshStatus, 1500);
+  } catch (e) { toast(e.message, true); }
 }
 
 // ------------------------------------------------------------- dashboard
@@ -127,29 +184,107 @@ function renderDashboard() {
   const s = state.status;
   if (!s) return h('div', { class: 'empty' }, 'Loading ...');
 
-  let profit = 0, power = 0, mining = 0;
-  for (const g of s.groups) {
-    if (g.state !== 'idle') { mining++; power += g.power_watts; }
-    profit += g.profit_btc_per_day || 0;
-  }
+  const { profit, power, mining } = totals();
+  const memory = s.system.memory;
   const cards = h('div', { class: 'cards' },
     card('Device groups mining', mining + ' of ' + s.groups.length),
     card('Expected profit per day', fmtBTC(profit) === '-' ? '-' : fmtBTC(profit) + ' BTC', fiat(profit)),
     card('Power draw', fmtWatts(power), s.btc_price ? '' : 'electricity is not counted'),
-    card('Bitcoin price', s.btc_price ? s.btc_price.toFixed(0) + ' ' + s.currency : '-', s.btc_price ? '' : 'only fetched with a power price'));
+    card('Bitcoin price', s.btc_price ? s.btc_price.toFixed(0) + ' ' + s.currency : '-', s.btc_price ? '' : 'only fetched with a power price'),
+    memory ? card('Memory left to reserve', fmtGB(memory.commit_free_mib), 'of ' + fmtGB(memory.commit_limit_mib) + ' (RAM and page file); RAM free: ' + fmtGB(memory.free_mib)) : null);
 
   const groups = s.groups.length
     ? h('div', { class: 'groups' }, s.groups.map(renderGroup))
     : h('div', { class: 'empty' }, 'No device group is active.');
 
+  const tempClass = c => 'num' + (c >= 85 ? ' hot' : c >= 78 ? ' warm' : '');
+  const val = (v, unit) => (v ? Math.round(v) + unit : '-');
   const devices = h('div', { class: 'scroll' }, h('table', {},
-    h('thead', {}, h('tr', {}, h('th', {}, 'ID'), h('th', {}, 'Kind'), h('th', {}, 'Model'), h('th', { class: 'num' }, 'Memory'), h('th', { class: 'num' }, 'Threads'))),
-    h('tbody', {}, state.devices.map(d => h('tr', {},
-      h('td', {}, d.id), h('td', {}, d.kind), h('td', {}, d.model || '-'),
-      h('td', { class: 'num' }, d.memory_mib ? d.memory_mib + ' MiB' : '-'),
-      h('td', { class: 'num' }, d.threads || '-'))))));
+    h('thead', {}, h('tr', {}, h('th', {}, 'ID'), h('th', {}, 'Model'),
+      h('th', { class: 'num' }, 'Temp'), h('th', { class: 'num' }, 'Max'), h('th', { class: 'num' }, 'Fan'),
+      h('th', { class: 'num' }, 'Power'), h('th', { class: 'num' }, 'Limit'), h('th', { class: 'num' }, 'Load'),
+      h('th', { class: 'num' }, 'Memory used'), h('th', { class: 'num' }, 'Clock'), h('th', { class: 'num' }, 'Mem clock'))),
+    h('tbody', {}, state.devices.map(d => {
+      const t = d.telemetry;
+      if (!t) {
+        return h('tr', {}, h('td', {}, d.id), h('td', {}, d.model || '-'),
+          h('td', { class: 'num', colspan: '9' }, d.threads ? d.threads + ' threads' : '-'));
+      }
+      return h('tr', {}, h('td', {}, d.id), h('td', {}, d.model || '-'),
+        h('td', { class: tempClass(t.temperature_c) }, val(t.temperature_c, ' °C')),
+        h('td', { class: tempClass(d.max_temperature_c) }, val(d.max_temperature_c, ' °C')),
+        h('td', { class: 'num' }, val(t.fan_percent, ' %')),
+        h('td', { class: 'num' }, val(t.power_watts, ' W')),
+        h('td', { class: 'num' }, val(t.power_limit_watts, ' W')),
+        h('td', { class: 'num' }, Math.round(t.utilization_percent) + ' %'),
+        h('td', { class: 'num' }, Math.round(t.memory_used_mib) + ' / ' + d.memory_mib + ' MiB'),
+        h('td', { class: 'num' }, val(t.clock_mhz, ' MHz')),
+        h('td', { class: 'num' }, val(t.memory_clock_mhz, ' MHz')));
+    }))));
 
-  return h('div', {}, h('h1', {}, 'Dashboard'), cards, h('h2', {}, 'Device groups'), groups, h('h2', {}, 'Devices'), devices);
+  return h('div', {}, h('h1', {}, 'Dashboard'), cards, h('h2', {}, 'Device groups'), groups,
+    h('h2', {}, 'Devices'), devices, renderBalances());
+}
+
+function renderBalances() {
+  const info = state.balances;
+  const out = [h('h2', {}, 'Balance at the pool')];
+  if (info.error) out.push(h('p', { class: 'help' }, 'Could not be updated: ' + info.error));
+  if (!info.balances.length) {
+    out.push(h('div', { class: 'empty' }, info.error ? 'No balance known.' : 'Nothing yet. The pool is asked every ten minutes once a wallet is set.'));
+    return out;
+  }
+  for (const b of info.balances) {
+    const amount = v => v.toFixed(8).replace(/0+$/, '').replace(/[.]$/, '') + ' ' + b.currency;
+    out.push(h('div', { class: 'cards' },
+      card('Unpaid at ' + b.pool, amount(b.unpaid), 'confirmed ' + amount(b.balance) + ', not yet exchanged ' + amount(b.unsold)),
+      card('Paid in the last 24 hours', amount(b.paid_24h)),
+      card('Earned in total', amount(b.total), new Date(b.updated).getFullYear() > 2000 ? 'updated ' + fmtAgo(b.updated) + ' ago' : '')));
+    if (b.payouts.length) {
+      out.push(h('h2', {}, 'Payouts', h('small', {}, b.pool)));
+      out.push(h('div', { class: 'scroll' }, h('table', {},
+        h('thead', {}, h('tr', {}, h('th', {}, 'Date'), h('th', { class: 'num' }, 'Amount'), h('th', {}, 'Transaction'))),
+        h('tbody', {}, b.payouts.slice(0, 20).map(p => h('tr', {},
+          h('td', {}, new Date(p.time).toLocaleString()),
+          h('td', { class: 'num' }, amount(p.amount)),
+          h('td', {}, p.tx)))))));
+    }
+  }
+  return out;
+}
+
+// -------------------------------------------------------------- activity
+
+function renderActivity() {
+  const runs = state.activity;
+  const head = [h('h1', {}, 'Activity'),
+    h('p', { class: 'help' }, 'Every run of a miner program in the last three days, newest first. "Earned" is an estimate from the measured hashrate and the pool\'s price at the time, not what the pool has credited.'),
+    h('div', { class: 'toolbar' }, h('a', { class: 'button', href: '/api/activity.csv' }, 'Download as CSV'),
+      h('span', { class: 'help' }, runs.length + ' runs'))];
+  if (!runs.length) return h('div', {}, head, h('div', { class: 'empty' }, 'No miner has finished a run yet.'));
+
+  const rows = runs.map(r => {
+    const minutes = (new Date(r.ended) - new Date(r.started)) / 60000;
+    const sat = r.earned_btc * 1e8;
+    return h('tr', {},
+      h('td', {}, h('span', { class: 'badge ' + r.end.replace(/ /g, '') }, r.end)),
+      h('td', {}, new Date(r.started).toLocaleString()),
+      h('td', { class: 'num' }, minutes.toFixed(1)),
+      h('td', {}, r.group), h('td', {}, r.miner),
+      h('td', {}, r.algorithm + (r.benchmark ? '  (benchmark)' : '')),
+      h('td', {}, r.coin ? r.pool + ' : ' + r.coin : r.pool),
+      h('td', { class: 'num' }, fmtHash(r.hashrate)),
+      h('td', { class: 'num' }, sat ? sat.toFixed(2) + ' sat' : '-'),
+      h('td', { class: 'num' }, r.energy_kwh ? r.energy_kwh.toFixed(3) + ' kWh' : '-'),
+      h('td', { class: 'num' }, r.energy_kwh > 0.0005 && sat ? (sat / r.energy_kwh).toFixed(0) : '-'),
+      h('td', { class: 'num' }, r.accepted + ' / ' + r.rejected));
+  });
+  return h('div', {}, head, h('div', { class: 'scroll' }, h('table', {},
+    h('thead', {}, h('tr', {}, h('th', {}, 'End'), h('th', {}, 'Started'), h('th', { class: 'num' }, 'Minutes'),
+      h('th', {}, 'Group'), h('th', {}, 'Miner'), h('th', {}, 'Algorithm'), h('th', {}, 'Pool : coin'),
+      h('th', { class: 'num' }, 'Hashrate'), h('th', { class: 'num' }, 'Earned'), h('th', { class: 'num' }, 'Energy'),
+      h('th', { class: 'num' }, 'sat/kWh'), h('th', { class: 'num' }, 'Shares ok / bad'))),
+    h('tbody', {}, rows))));
 }
 
 function card(label, value, sub) {
@@ -394,6 +529,9 @@ function configGeneral() {
       boolField('Mine with the CPU', 'general.cpu.enabled', 'Off by default: it makes the machine slow for everything else, and the GPU miners need some CPU time themselves.'),
       numberField('Assumed power draw in watts', 'general.cpu.watts', 'Used for the electricity cost; a CPU cannot be measured the way a GPU can.'),
       numberField('Threads', 'general.cpu.threads', '0 lets the miner decide.', '1')),
+    h('div', { class: 'section' }, h('h3', {}, 'Memory'),
+      numberField('Keep free, in GB', 'general.memory.min_free_ram_gb', 'Main memory (RAM and page file together) that is left for everything else. A miner whose algorithm needs more than the rest is not started. This is what keeps two miners from building a large DAG at the same time and running the machine out of memory.', '0.5'),
+      numberField('Keep free on every graphics card, in GB', 'general.memory.reserved_vram_gb', 'Graphics memory that is left alone, for example for the desktop.', '0.1')),
     h('div', { class: 'section' }, h('h3', {}, 'Web interface'),
       textField('Listen address', 'general.api.listen', 'host:port. 127.0.0.1 is only reachable from this machine. A change takes effect after rbm is restarted. Empty turns the interface off.'),
       textField('Password', 'general.api.password', 'Without a password the interface only works on this machine. With one, every access needs it (the user name does not matter). Use it only on a network you trust: the connection is not encrypted.', 'password')),
@@ -526,7 +664,13 @@ async function refreshStatus() {
   banner.hidden = !state.status.waiting;
   banner.textContent = state.status.waiting ? 'Not mining: ' + state.status.waiting : '';
 
+  renderTopbar();
   try {
+    if (state.page === 'dashboard') {
+      state.devices = await api('/api/devices');
+      state.balances = await api('/api/balances');
+    }
+    if (state.page === 'activity') state.activity = await api('/api/activity');
     if (state.page === 'pools') state.offers = await api('/api/offers');
     if (state.page === 'logs') {
       state.log = await api('/api/log');
@@ -556,7 +700,7 @@ function rerenderKeepingFocus(input) {
 }
 
 function render() {
-  const view = { dashboard: renderDashboard, miners: renderMiners, pools: renderPools, config: renderConfig, logs: renderLogs }[state.page]();
+  const view = { dashboard: renderDashboard, miners: renderMiners, pools: renderPools, activity: renderActivity, config: renderConfig, logs: renderLogs }[state.page]();
   document.getElementById('page').replaceChildren(view);
   for (const a of document.querySelectorAll('#nav a')) a.classList.toggle('active', a.dataset.page === state.page);
 }

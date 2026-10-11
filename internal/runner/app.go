@@ -22,16 +22,22 @@ import (
 	"rbm/internal/pool"
 	"rbm/internal/rates"
 	"rbm/internal/stats"
+	"rbm/internal/sysinfo"
 )
 
 // Version is shown in the interface.
-const Version = "0.1"
+const Version = "0.2"
 
 const (
-	logLines        = 1000
-	minerLogTail    = 64 << 10
-	minerLogsListed = 60
-	currencyMaxAge  = 10 * time.Minute
+	logLines          = 1000
+	minerLogTail      = 64 << 10
+	minerLogsListed   = 60
+	currencyMaxAge    = 10 * time.Minute
+	telemetryInterval = 10 * time.Second
+	balanceInterval   = 10 * time.Minute
+	activityDays      = 3
+	activityKept      = 30 * 24 * time.Hour
+	activityListed    = 500
 )
 
 // App is the running application: it holds the configuration, runs the
@@ -43,14 +49,25 @@ type App struct {
 	devices     []device.Device
 	definitions map[string]*miner.Definition
 	reload      chan struct{}
+	started     time.Time
+	// replaceable for tests
+	telemetryFn func(context.Context) (map[int]device.Telemetry, error)
+	balanceFn   func(context.Context, *pool.Zpool) (pool.Balance, error)
 
 	mu           sync.Mutex
 	cfg          *config.Config
 	engine       *engine.Engine
+	store        *stats.Store
 	waiting      string
+	paused       bool
 	log          []string
 	currencies   []pool.PayoutCurrency
 	currenciesAt time.Time
+	telemetry    map[int]device.Telemetry
+	maxTemp      map[int]float64
+	balances     api.BalanceInfo
+	balanceKey   string
+	balanceAt    time.Time
 }
 
 // NewApp loads the configuration from dir and looks at the hardware.
@@ -73,6 +90,9 @@ func NewApp(ctx context.Context, configDir string, out io.Writer) (*App, error) 
 		devices:     devices,
 		definitions: definitions,
 		reload:      make(chan struct{}, 1),
+		started:     time.Now(),
+		telemetryFn: device.GPUTelemetry,
+		balanceFn:   func(ctx context.Context, z *pool.Zpool) (pool.Balance, error) { return z.Balance(ctx) },
 		cfg:         cfg,
 		waiting:     "starting",
 	}, nil
@@ -102,6 +122,10 @@ func (a *App) Run(ctx context.Context) error {
 		a.logf("web interface: http://%s/", server.Addr())
 	}
 
+	watchCtx, stopWatching := context.WithCancel(ctx)
+	defer stopWatching()
+	go a.watch(watchCtx)
+
 	for {
 		err := a.cycle(ctx)
 		if ctx.Err() != nil {
@@ -114,14 +138,112 @@ func (a *App) Run(ctx context.Context) error {
 	}
 }
 
+// watch keeps the figures up to date that do not come from the engine: what
+// the graphics cards report and what the pool holds for the wallet.
+func (a *App) watch(ctx context.Context) {
+	ticker := time.NewTicker(telemetryInterval)
+	defer ticker.Stop()
+	for {
+		a.readTelemetry(ctx)
+		a.readBalance(ctx)
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+func (a *App) readTelemetry(ctx context.Context) {
+	if a.telemetryFn == nil {
+		return
+	}
+	telemetry, err := a.telemetryFn(ctx)
+	if err != nil {
+		// no NVIDIA driver, or the tool is busy: the last figures stay
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.telemetry = telemetry
+	if a.maxTemp == nil {
+		a.maxTemp = map[int]float64{}
+	}
+	for index, t := range telemetry {
+		if t.TemperatureC > a.maxTemp[index] {
+			a.maxTemp[index] = t.TemperatureC
+		}
+	}
+}
+
+// gpuPower hands the engine the power draw from the last reading.
+func (a *App) gpuPower(ctx context.Context) (map[int]float64, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	power := make(map[int]float64, len(a.telemetry))
+	for index, t := range a.telemetry {
+		power[index] = t.PowerWatts
+	}
+	return power, nil
+}
+
+// readBalance asks the pool for the balance of the wallet, now and then,
+// and at once when the wallet changes.
+func (a *App) readBalance(ctx context.Context) {
+	cfg := a.Config()
+	z := cfg.Pools.Zpool
+	key := z.Wallet + "/" + z.Currency
+
+	a.mu.Lock()
+	due := key != a.balanceKey || time.Since(a.balanceAt) >= balanceInterval
+	a.mu.Unlock()
+	if !due || a.balanceFn == nil {
+		return
+	}
+
+	info := api.BalanceInfo{}
+	if z.Enabled && z.Wallet != "" {
+		callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		balance, err := a.balanceFn(callCtx, &pool.Zpool{Wallet: z.Wallet, Currency: z.Currency})
+		cancel()
+		if err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			info.Error = err.Error()
+			// an old figure is better than none
+			a.mu.Lock()
+			if key == a.balanceKey {
+				info.Balances = a.balances.Balances
+			}
+			a.mu.Unlock()
+		} else {
+			info.Balances = []pool.Balance{balance}
+		}
+	}
+	a.mu.Lock()
+	a.balances, a.balanceKey, a.balanceAt = info, key, time.Now()
+	a.mu.Unlock()
+}
+
 // cycle runs the engine with the current configuration until that changes
 // or ctx is cancelled. Without a usable configuration it just waits.
 func (a *App) cycle(ctx context.Context) error {
 	cfg := a.Config()
-	e, cleanup, reason, err := a.build(ctx, &cfg)
+	store, err := stats.Open(filepath.Join(cfg.General.DataDir, "stats.db"))
 	if err != nil {
 		return err
 	}
+	a.setStore(store)
+	defer func() {
+		a.setStore(nil)
+		store.Close()
+	}()
+	if err := store.PruneRuns(time.Now().Add(-activityKept)); err != nil {
+		return err
+	}
+
+	e, reason := a.build(ctx, &cfg, store)
 	if e == nil {
 		a.setEngine(nil, reason)
 		a.logf("not mining: %s", reason)
@@ -131,7 +253,6 @@ func (a *App) cycle(ctx context.Context) error {
 		}
 		return nil
 	}
-	defer cleanup()
 
 	a.setEngine(e, "")
 	engineCtx, cancel := context.WithCancel(ctx)
@@ -152,11 +273,11 @@ func (a *App) cycle(ctx context.Context) error {
 	return err
 }
 
-// build makes an engine for cfg. A nil engine with a reason means the
-// configuration is not ready to mine yet; an error is something worse.
-func (a *App) build(ctx context.Context, cfg *config.Config) (e *engine.Engine, cleanup func(), reason string, err error) {
+// build makes an engine for cfg. A nil engine comes with the reason why the
+// configuration is not ready to mine yet.
+func (a *App) build(ctx context.Context, cfg *config.Config, store *stats.Store) (*engine.Engine, string) {
 	if err := cfg.ReadyToMine(); err != nil {
-		return nil, nil, err.Error(), nil
+		return nil, err.Error()
 	}
 	z := cfg.Pools.Zpool
 	zpool := &pool.Zpool{
@@ -171,9 +292,9 @@ func (a *App) build(ctx context.Context, cfg *config.Config) (e *engine.Engine, 
 	}
 	if err := checkPayoutCurrency(ctx, zpool, a.logf); err != nil {
 		if ctx.Err() != nil {
-			return nil, nil, "stopping", nil
+			return nil, "stopping"
 		}
-		return nil, nil, err.Error(), nil
+		return nil, err.Error()
 	}
 
 	var devices []device.Device
@@ -183,17 +304,14 @@ func (a *App) build(ctx context.Context, cfg *config.Config) (e *engine.Engine, 
 		}
 	}
 
-	store, err := stats.Open(filepath.Join(cfg.General.DataDir, "stats.db"))
-	if err != nil {
-		return nil, nil, "", err
-	}
 	deps := engine.Deps{
 		Store:       store,
 		Sources:     []pool.Source{zpool},
 		Definitions: a.definitions,
 		Devices:     devices,
 		Launch:      engine.Launch,
-		Power:       device.GPUPower,
+		Power:       a.gpuPower,
+		Memory:      sysinfo.ReadMemory,
 		Logf:        a.logf,
 	}
 	power := cfg.General.Power
@@ -212,7 +330,7 @@ func (a *App) build(ctx context.Context, cfg *config.Config) (e *engine.Engine, 
 		miners[name] = engine.MinerOptions{Disabled: m.Disabled, ExcludeAlgorithms: m.ExcludeAlgorithms, ExtraArgs: m.ExtraArgs}
 	}
 	sw := cfg.General.Switching
-	e, err = engine.New(engine.Options{
+	e, err := engine.New(engine.Options{
 		Interval:          time.Duration(sw.Interval),
 		MinRunTime:        time.Duration(sw.MinRunTime),
 		BenchmarkTime:     time.Duration(sw.BenchmarkTime),
@@ -228,13 +346,15 @@ func (a *App) build(ctx context.Context, cfg *config.Config) (e *engine.Engine, 
 		Miners:            miners,
 		OnlyAlgorithms:    cfg.Algorithms.Only,
 		ExcludeAlgorithms: cfg.Algorithms.Exclude,
+		Paused:            a.isPaused(),
+		MinFreeRAMMiB:     cfg.General.Memory.MinFreeRAMGB * 1024,
+		ReservedVRAMMiB:   cfg.General.Memory.ReservedVRAMGB * 1024,
 	}, deps)
 	if err != nil {
-		store.Close()
 		// e.g. every device is excluded: a matter of configuration
-		return nil, nil, err.Error(), nil
+		return nil, err.Error()
 	}
-	return e, func() { store.Close() }, "", nil
+	return e, ""
 }
 
 func (a *App) setEngine(e *engine.Engine, waiting string) {
@@ -243,10 +363,22 @@ func (a *App) setEngine(e *engine.Engine, waiting string) {
 	a.mu.Unlock()
 }
 
+func (a *App) setStore(store *stats.Store) {
+	a.mu.Lock()
+	a.store = store
+	a.mu.Unlock()
+}
+
 func (a *App) currentEngine() *engine.Engine {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.engine
+}
+
+func (a *App) isPaused() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.paused
 }
 
 // The methods below are api.Backend.
@@ -264,13 +396,69 @@ func (a *App) Status() engine.Status {
 	return engine.Status{Time: time.Now()}
 }
 
-func (a *App) Devices() []device.Device { return a.devices }
+func (a *App) System() api.System {
+	system := api.System{Started: a.started, Paused: a.isPaused()}
+	if memory, err := sysinfo.ReadMemory(); err == nil {
+		system.Memory = &memory
+	}
+	return system
+}
+
+// SetPaused stops all mining or takes it up again. The pause holds across a
+// change of the configuration, but not across a restart of the program.
+func (a *App) SetPaused(paused bool) {
+	a.mu.Lock()
+	changed := a.paused != paused
+	a.paused = paused
+	e := a.engine
+	a.mu.Unlock()
+	if !changed {
+		return
+	}
+	if e != nil {
+		e.SetPaused(paused)
+	} else if paused {
+		a.logf("mining is paused")
+	} else {
+		a.logf("mining continues")
+	}
+}
+
+func (a *App) Devices() []api.DeviceStatus {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	out := make([]api.DeviceStatus, len(a.devices))
+	for i, d := range a.devices {
+		out[i] = api.DeviceStatus{Device: d}
+		if t, ok := a.telemetry[d.Index]; ok && d.Kind == device.GPU {
+			out[i].Telemetry = &t
+			out[i].MaxTemperatureC = a.maxTemp[d.Index]
+		}
+	}
+	return out
+}
 
 func (a *App) Offers() []pool.Offer {
 	if e := a.currentEngine(); e != nil {
 		return e.Offers()
 	}
 	return nil
+}
+
+func (a *App) Balances() api.BalanceInfo {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.balances
+}
+
+func (a *App) Activity() ([]stats.Run, error) {
+	a.mu.Lock()
+	store := a.store
+	a.mu.Unlock()
+	if store == nil {
+		return nil, nil
+	}
+	return store.Runs(time.Now().Add(-activityDays*24*time.Hour), activityListed)
 }
 
 // Config returns a copy of the configuration that the caller may change.

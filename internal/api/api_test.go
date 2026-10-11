@@ -16,6 +16,8 @@ import (
 	"rbm/internal/device"
 	"rbm/internal/engine"
 	"rbm/internal/pool"
+	"rbm/internal/stats"
+	"rbm/internal/sysinfo"
 )
 
 // fakeBackend records what the API asks of the application.
@@ -24,6 +26,7 @@ type fakeBackend struct {
 	saved   *config.Config
 	saveErr error
 	waiting string
+	paused  bool
 	reset   []string
 	enabled []string
 }
@@ -47,8 +50,34 @@ func (f *fakeBackend) Status() engine.Status {
 	}}}
 }
 
-func (f *fakeBackend) Devices() []device.Device {
-	return []device.Device{{ID: "GPU#00", Kind: device.GPU, Vendor: "NVIDIA", Model: "GeForce RTX 3060", MemoryMiB: 12288}}
+func (f *fakeBackend) Devices() []DeviceStatus {
+	return []DeviceStatus{
+		{Device: device.Device{ID: "GPU#00", Kind: device.GPU, Vendor: "NVIDIA", Model: "GeForce RTX 3060", MemoryMiB: 12288},
+			Telemetry: &device.Telemetry{TemperatureC: 61, FanPercent: 73, PowerWatts: 170, PowerLimitWatts: 170, ClockMHz: 1717, MemoryClockMHz: 7301}, MaxTemperatureC: 78},
+		{Device: device.Device{ID: "CPU#00", Kind: device.CPU, Model: "Intel(R) Core(TM) i9-10900K", Threads: 20}},
+	}
+}
+
+func (f *fakeBackend) System() System {
+	return System{Started: time.Date(2026, 10, 11, 9, 0, 0, 0, time.UTC), Paused: f.paused,
+		Memory: &sysinfo.Memory{TotalMiB: 32000, FreeMiB: 7700, CommitLimitMiB: 54000, CommitFreeMiB: 11000}}
+}
+
+func (f *fakeBackend) SetPaused(paused bool) { f.paused = paused }
+
+func (f *fakeBackend) Balances() BalanceInfo {
+	return BalanceInfo{Balances: []pool.Balance{{Pool: "zpool", Currency: "RVN", Balance: 152.09, Unsold: 12.5, Unpaid: 164.59, Paid24h: 217.2, Total: 727.8,
+		Payouts: []pool.Payout{{Time: time.Date(2026, 10, 11, 5, 34, 19, 0, time.UTC), Amount: 56.68336412, Tx: "7c66"}}}}}
+}
+
+func (f *fakeBackend) Activity() ([]stats.Run, error) {
+	start := time.Date(2026, 10, 11, 8, 0, 0, 0, time.UTC)
+	return []stats.Run{
+		{ID: 2, Group: "RTX3060", Miner: "ccminer-tpfuemp", Algorithm: "rinhash", Pool: "zpool", Coin: "RIN", Started: start.Add(time.Hour), Ended: start.Add(2 * time.Hour),
+			End: stats.EndSwitched, Hashrate: 1.2e6, EarnedBTC: 2.04e-5, EnergyKWh: 0.193, Accepted: 410, Rejected: 1},
+		{ID: 1, Group: "RTX3060", Miner: "rigel", Algorithm: "kawpow", Pool: "zpool", Started: start, Ended: start.Add(3 * time.Minute),
+			Benchmark: true, End: stats.EndCrashed, Hashrate: 19.9e6, EarnedBTC: 1e-8, EnergyKWh: 0.008},
+	}, nil
 }
 
 func (f *fakeBackend) Offers() []pool.Offer {
@@ -274,6 +303,56 @@ func TestActions(t *testing.T) {
 	}
 	if w := do(b, request{method: http.MethodGet, path: "/api/benchmarks/reset"}); w.Code == http.StatusNoContent {
 		t.Error("an action ran on GET")
+	}
+}
+
+func TestSystemPauseBalancesActivity(t *testing.T) {
+	b := newBackend()
+	// the status carries what the header of the interface shows
+	body := do(b, request{path: "/api/status"}).Body.String()
+	for _, want := range []string{`"started":"2026-10-11T09:00:00Z"`, `"paused":false`, `"commit_free_mib":11000`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("status misses %s: %s", want, body)
+		}
+	}
+	body = do(b, request{path: "/api/devices"}).Body.String()
+	for _, want := range []string{`"temperature_c":61`, `"max_temperature_c":78`, `"id":"CPU#00"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("devices miss %s: %s", want, body)
+		}
+	}
+
+	if w := do(b, request{method: http.MethodPost, path: "/api/pause", body: `{"paused":true}`}); w.Code != http.StatusNoContent || !b.paused {
+		t.Errorf("pause: %d, paused %v", w.Code, b.paused)
+	}
+	if w := do(b, request{method: http.MethodPost, path: "/api/pause", body: `{"paused":false}`}); w.Code != http.StatusNoContent || b.paused {
+		t.Errorf("resume: %d, paused %v", w.Code, b.paused)
+	}
+	if w := do(b, request{method: http.MethodPost, path: "/api/pause", body: `{}`}); w.Code != http.StatusBadRequest {
+		t.Errorf("pause without a value: %d", w.Code)
+	}
+
+	body = do(b, request{path: "/api/balances"}).Body.String()
+	for _, want := range []string{`"currency":"RVN"`, `"unpaid":164.59`, `"tx":"7c66"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("balances miss %s: %s", want, body)
+		}
+	}
+
+	body = do(b, request{path: "/api/activity"}).Body.String()
+	for _, want := range []string{`"algorithm":"rinhash"`, `"end":"crashed"`, `"earned_btc":0.0000204`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("activity misses %s: %s", want, body)
+		}
+	}
+	w := do(b, request{path: "/api/activity.csv"})
+	lines := strings.Split(strings.TrimSpace(w.Body.String()), string(rune(10)))
+	if w.Code != http.StatusOK || len(lines) != 3 || !strings.HasPrefix(lines[0], "started,ended,minutes,group") ||
+		!strings.Contains(lines[1], ",60.0,RTX3060,ccminer-tpfuemp,rinhash,zpool,RIN,false,switched,1200000.00,2.04e-05,0.1930,410,1") {
+		t.Errorf("csv %d: %q", w.Code, lines)
+	}
+	if !strings.Contains(w.Header().Get("Content-Disposition"), "rbm-activity.csv") {
+		t.Errorf("csv headers: %v", w.Header())
 	}
 }
 

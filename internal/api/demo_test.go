@@ -53,6 +53,12 @@ func (d demoBackend) Status() engine.Status {
 	}}
 }
 
+func (d demoBackend) System() System {
+	s := d.fakeBackend.System()
+	s.Started = time.Now().Add(-27*time.Hour - 44*time.Minute)
+	return s
+}
+
 func (d demoBackend) Offers() []pool.Offer {
 	return []pool.Offer{
 		{Pool: "zpool", Algorithm: "kawpow", Price: 1.19e-13, Hashrate: 5.17e9, Workers: 88, FeePercent: 1},
