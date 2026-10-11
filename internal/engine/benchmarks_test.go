@@ -29,7 +29,8 @@ func TestBenchmarkList(t *testing.T) {
 	s.advance(2 * time.Minute)
 
 	list := s.engine.Benchmarks()
-	if len(list) != 2 {
+	// one entry for each of the miner's algorithms
+	if len(list) != 6 {
 		t.Fatalf("%d entries: %+v", len(list), list)
 	}
 	kawpow := s.bench(kawpowID)

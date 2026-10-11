@@ -46,3 +46,15 @@ algorithms:
   - name: sha512256d
     fee: 1.0
     min_memory_mib: 2048
+  # the algorithms below are mined at coin pools; they were added from
+  # Rigel's documentation and the size of the coins' data in October 2026
+  - name: autolykos2
+    fee: 1.0
+    min_memory_mib: 7400
+  - name: etchash
+    min_memory_mib: 5120
+  - name: ethash
+    min_memory_mib: 7680
+  - name: nexapow
+    fee: 2.0
+    min_memory_mib: 3072
