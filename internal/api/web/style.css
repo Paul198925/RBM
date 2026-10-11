@@ -260,3 +260,5 @@ td.mono { font-family: var(--mono); font-size: 12px; }
   .nav-section, .worker { display: none; }
   nav a { padding: 12px 10px; white-space: nowrap; }
 }
+.eta { margin: 16px 0 4px; padding: 12px 15px; background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 8px; }
+.eta .main { font-size: 15px; font-weight: 600; margin-bottom: 4px; }

@@ -591,12 +591,41 @@ function renderBenchmarks() {
 
   const selected = t.rows.filter(resettable).map(b => b.hash_key).filter(k => state.benchSelected.has(k));
   return h('div', {}, h('h1', {}, 'Manage Miner Benchmarks'), actions,
+    benchmarkEta(all, goal),
     h('div', { class: 'title' }, h('h2', {}, 'Benchmark Status'),
       h('button', { class: 'primary', disabled: selected.length === 0,
         onclick: () => resetBenchmarks({ hash_keys: selected }, 'Measure the ' + selected.length + ' selected benchmarks again?') },
         'Benchmark selected' + (selected.length ? '  (' + selected.length + ')' : '')),
       h('span', { class: 'help' }, t.rows.length + ' of ' + all.length + ' shown, brought up to date once per round')),
     t.el);
+}
+
+// What a benchmark takes besides the measured time: the miner starts, and
+// its first 90 seconds do not count.
+const BENCH_OVERHEAD = 120;
+
+// benchmarkEta says roughly how long the open benchmarks will take. The
+// device groups measure side by side, so the slowest one sets the time.
+function benchmarkEta(all, goal) {
+  const groups = new Map();
+  for (const b of all) {
+    if (b.status !== 'pending' && b.status !== 'benchmarking') continue;
+    const g = groups.get(b.group) || { name: b.group, count: 0, seconds: 0 };
+    g.count++;
+    // a benchmark under way has its start behind it
+    g.seconds += Math.max(0, goal - b.measured_seconds) + (b.status === 'benchmarking' && b.measured_seconds > 0 ? 0 : BENCH_OVERHEAD);
+    groups.set(b.group, g);
+  }
+  if (!groups.size || !goal) return null;
+  const list = Array.from(groups.values()).sort((a, b) => b.seconds - a.seconds);
+  const total = list.reduce((sum, g) => sum + g.count, 0);
+  const paused = state.status && state.status.system.paused;
+  return h('div', { class: 'eta' },
+    h('div', { class: 'main' }, paused
+      ? total + ' benchmarks are open. Mining is paused, so nothing is measured.'
+      : 'About ' + fmtDuration(list[0].seconds) + ' until all ' + total + ' open benchmarks are measured.'),
+    h('div', { class: 'help' }, list.map(g => g.name + ': ' + g.count + ' to go, about ' + fmtDuration(g.seconds)).join('   ·   ')),
+    h('div', { class: 'help' }, 'A rough figure: it counts ' + Math.round(goal / 60) + ' min of measuring and 2 min of starting per benchmark. Miners that have to be downloaded, build a DAG, wait for memory or fail make it longer. Algorithms without an offer are not counted; they are measured once a pool pays for them.'));
 }
 
 async function resetBenchmarks(body, question) {

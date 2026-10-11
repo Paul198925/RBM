@@ -22,7 +22,7 @@ func (d demoBackend) Status() engine.Status {
 	since := time.Now().Add(-47 * time.Minute)
 	started := time.Now().Add(-2 * time.Minute)
 	key := "hashrate/rigel/GPU#00/kawpow"
-	return engine.Status{Time: time.Now(), BTCPrice: 74177, Currency: "EUR", Groups: []engine.GroupStatus{
+	return engine.Status{Time: time.Now(), BTCPrice: 74177, Currency: "EUR", BenchmarkSeconds: 180, Groups: []engine.GroupStatus{
 		{
 			Name: "RTX3060", Devices: []string{"GPU#00"}, State: "mining", Reason: "still the most profitable",
 			Miner: "rigel", Algorithm: "kawpow", Pool: "zpool", Coin: "CLORE", Running: key + "@zpool:CLORE", Since: &since,
