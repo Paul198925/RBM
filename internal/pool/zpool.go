@@ -94,6 +94,8 @@ type zpoolCoin struct {
 	Hashrate           flexFloat `json:"hashrate"`
 	Workers            flexFloat `json:"workers"`
 	Estimate           flexFloat `json:"estimate"`
+	TimeSinceLast      flexFloat `json:"timesincelast"`
+	Blocks24h          flexFloat `json:"24h_blocks"`
 	ConversionDisabled flexFloat `json:"conversion_disabled"`
 	MinimumPayout      flexFloat `json:"minimum_payout"`
 	Error              string    `json:"error"`
@@ -229,7 +231,10 @@ func (z *Zpool) Fetch(ctx context.Context) ([]Offer, error) {
 				FeePercent: float64(a.Fees),
 				Hashrate:   float64(coin.Hashrate),
 				Workers:    int(coin.Workers),
-				Updated:    now,
+
+				LastBlockSeconds: float64(coin.TimeSinceLast),
+				Blocks24h:        float64(coin.Blocks24h),
+				Updated:          now,
 			})
 		}
 	}

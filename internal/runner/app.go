@@ -600,6 +600,22 @@ func (a *App) Enable(hashKey string) {
 	}
 }
 
+func (a *App) ResetWatchdog() {
+	if e := a.currentEngine(); e != nil {
+		e.ResetWatchdog()
+	}
+}
+
+func (a *App) Totals() ([]stats.Total, error) {
+	a.mu.Lock()
+	store := a.store
+	a.mu.Unlock()
+	if store == nil {
+		return nil, nil
+	}
+	return store.Totals()
+}
+
 func (a *App) Log() []string {
 	a.mu.Lock()
 	defer a.mu.Unlock()

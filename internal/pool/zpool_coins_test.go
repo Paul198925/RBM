@@ -10,7 +10,7 @@ import (
 )
 
 const coinList = `{
-  "CLORE": {"algo": "kawpow", "port": 1325, "ssl_port": 51325, "name": "Clore", "hashrate": 3100000000, "workers": 60, "estimate": "0.0001100000", "conversion_disabled": 0, "minimum_payout": 0.5, "error": ""},
+  "CLORE": {"algo": "kawpow", "port": 1325, "ssl_port": 51325, "name": "Clore", "hashrate": 3100000000, "workers": 60, "estimate": "0.0001100000", "timesincelast": 396, "24h_blocks": 211, "conversion_disabled": 0, "minimum_payout": 0.5, "error": ""},
   "RVN": {"algo": "kawpow", "port": 1325, "ssl_port": 51325, "name": "Raven", "hashrate": 0, "workers": 0, "estimate": "0.0000557650", "conversion_disabled": 0, "minimum_payout": 0.05, "error": ""},
   "NEOX": {"algo": "kawpow", "port": 1325, "ssl_port": 51325, "name": "Neoxa", "hashrate": 900000000, "workers": 20, "estimate": "0.0000000000", "conversion_disabled": 1, "error": ""},
   "MEWC": {"algo": "kawpow", "port": 1325, "ssl_port": 51325, "name": "Meowcoin", "hashrate": 200000000, "workers": 11, "estimate": "0.0000900000", "conversion_disabled": 0, "error": ""},
@@ -66,6 +66,9 @@ func TestZpoolCoinOffers(t *testing.T) {
 		t.Errorf("login = %q / %q", clore.User, clore.Pass)
 	}
 	// 0.00011 BTC per day for 1000 MH/s, the factor of the kawpow port
+	if clore.LastBlockSeconds != 396 || clore.Blocks24h != 211 {
+		t.Errorf("clore blocks = %v s ago, %v a day", clore.LastBlockSeconds, clore.Blocks24h)
+	}
 	if !near(clore.Price, 0.00011/1e9) || clore.FeePercent != 1 || clore.Hashrate != 3.1e9 || clore.Workers != 60 {
 		t.Errorf("clore figures = %+v", clore)
 	}

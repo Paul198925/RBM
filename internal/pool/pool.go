@@ -34,7 +34,12 @@ type Offer struct {
 	// Hashrate is the total hashrate of the pool on this algorithm.
 	Hashrate float64
 	Workers  int
-	Updated  time.Time
+	// LastBlockSeconds is how long ago the pool found its last block of
+	// the coin, Blocks24h how many it found in a day. Both are 0 where the
+	// pool does not say, as for its algorithm ports.
+	LastBlockSeconds float64
+	Blocks24h        float64
+	Updated          time.Time
 }
 
 // Label names the offer for logs: "zpool" or "zpool:RVN".

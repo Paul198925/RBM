@@ -396,6 +396,20 @@ func (e *Engine) SetPaused(paused bool) {
 	})
 }
 
+// ResetWatchdog forgets all recent failures: what was taken out is let back
+// in, and the counters start over. It is safe to call from any goroutine.
+func (e *Engine) ResetWatchdog() {
+	e.do(func() {
+		n := 0
+		for _, g := range e.groups {
+			n += len(g.disabled) + len(g.crashes)
+			g.disabled = map[string]time.Time{}
+			g.crashes = map[string][]time.Time{}
+		}
+		e.deps.Logf("watchdog was reset, %d entries cleared", n)
+	})
+}
+
 // round stores what was measured, checks on the running miners and makes
 // every group mine what the selector picks.
 func (e *Engine) round(ctx context.Context, now time.Time) error {

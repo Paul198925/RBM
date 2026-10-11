@@ -73,6 +73,40 @@ func (s *Store) PruneRuns(before time.Time) error {
 	return err
 }
 
+// Total sums up the runs at one pool.
+type Total struct {
+	Pool string `json:"pool"`
+	Runs int    `json:"runs"`
+	// EarnedBTC is the estimate of the runs, as in Run.
+	EarnedBTC float64   `json:"earned_btc"`
+	EnergyKWh float64   `json:"energy_kwh"`
+	Minutes   float64   `json:"minutes"`
+	Started   time.Time `json:"started"`
+	Updated   time.Time `json:"updated"`
+}
+
+// Totals sums up all recorded runs per pool.
+func (s *Store) Totals() ([]Total, error) {
+	rows, err := s.db.Query(
+		"SELECT pool, COUNT(*), SUM(earned), SUM(energy), SUM(ended - started) / 60.0, MIN(started), MAX(ended) " +
+			"FROM runs GROUP BY pool ORDER BY pool")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	totals := []Total{}
+	for rows.Next() {
+		var t Total
+		var started, updated int64
+		if err := rows.Scan(&t.Pool, &t.Runs, &t.EarnedBTC, &t.EnergyKWh, &t.Minutes, &started, &updated); err != nil {
+			return nil, err
+		}
+		t.Started, t.Updated = time.Unix(started, 0), time.Unix(updated, 0)
+		totals = append(totals, t)
+	}
+	return totals, rows.Err()
+}
+
 // RunKey names a device group's runs of a miner on an algorithm.
 func RunKey(group, miner, algorithm string) string {
 	return group + "/" + miner + "/" + algorithm

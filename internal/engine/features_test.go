@@ -220,3 +220,32 @@ func TestExchangeRateWithoutAPowerPrice(t *testing.T) {
 		t.Errorf("candidate = %+v", c)
 	}
 }
+
+func TestWatchdogStatusAndReset(t *testing.T) {
+	s := twoPrices(t, Options{})
+	s.advance(time.Minute)
+	s.miners[0].exit()
+	s.advance(20 * time.Second)
+	// one crash: counted, not yet taken out
+	g := s.engine.Status().Groups[0]
+	if len(g.Crashes) != 1 || g.Crashes[0].HashKey != kawpowID || g.Crashes[0].Count != 1 || len(g.Disabled) != 0 {
+		t.Fatalf("after one crash: crashes %+v, disabled %+v", g.Crashes, g.Disabled)
+	}
+	for i := 0; i < 2; i++ {
+		s.miners[len(s.miners)-1].exit()
+		s.advance(20 * time.Second)
+	}
+	if g = s.engine.Status().Groups[0]; len(g.Disabled) != 1 || len(g.Crashes) != 0 {
+		t.Fatalf("after three crashes: crashes %+v, disabled %+v", g.Crashes, g.Disabled)
+	}
+
+	s.engine.ResetWatchdog()
+	s.next = s.now
+	s.advance(6 * time.Minute)
+	if g = s.engine.Status().Groups[0]; len(g.Disabled) != 0 || len(g.Crashes) != 0 || s.running() != "kawpow" {
+		t.Errorf("after the reset: %+v, running %q", g, s.running())
+	}
+	if !s.logged("watchdog was reset, 1 entries cleared") {
+		t.Errorf("log:\n%s", strings.Join(s.logs, "\n"))
+	}
+}

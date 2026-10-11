@@ -22,13 +22,14 @@ import (
 
 // fakeBackend records what the API asks of the application.
 type fakeBackend struct {
-	cfg     config.Config
-	saved   *config.Config
-	saveErr error
-	waiting string
-	paused  bool
-	reset   []string
-	enabled []string
+	cfg            config.Config
+	saved          *config.Config
+	saveErr        error
+	waiting        string
+	paused         bool
+	watchdogResets int
+	reset          []string
+	enabled        []string
 }
 
 func newBackend() *fakeBackend {
@@ -81,7 +82,7 @@ func (f *fakeBackend) Activity() ([]stats.Run, error) {
 }
 
 func (f *fakeBackend) Offers() []pool.Offer {
-	return []pool.Offer{{Pool: "zpool", Algorithm: "kawpow", Coin: "CLORE", CoinName: "Clore", Price: 1.1e-13,
+	return []pool.Offer{{Pool: "zpool", Algorithm: "kawpow", Coin: "CLORE", CoinName: "Clore", Price: 1.1e-13, LastBlockSeconds: 396, Blocks24h: 211,
 		User: "wallet1", Pass: "rig1,c=BTC,zap=CLORE", Host: "kawpow.eu.mine.zpool.ca", Port: 1325}}
 }
 
@@ -112,6 +113,12 @@ func (f *fakeBackend) ResetBenchmarks(which string, hashKeys []string) {
 }
 
 func (f *fakeBackend) Enable(hashKey string) { f.enabled = append(f.enabled, hashKey) }
+func (f *fakeBackend) ResetWatchdog()        { f.watchdogResets++ }
+
+func (f *fakeBackend) Totals() ([]stats.Total, error) {
+	return []stats.Total{{Pool: "zpool", Runs: 42, EarnedBTC: 0.00012819, EnergyKWh: 4.616, Minutes: 3052.77,
+		Started: time.Date(2026, 10, 10, 5, 0, 50, 0, time.UTC), Updated: time.Date(2026, 10, 11, 8, 41, 35, 0, time.UTC)}}, nil
+}
 
 func (f *fakeBackend) Benchmarks() []engine.BenchmarkStatus {
 	updated := time.Date(2026, 10, 11, 10, 30, 0, 0, time.UTC)
@@ -423,6 +430,29 @@ func TestSystemPauseBalancesActivity(t *testing.T) {
 	}
 	if !strings.Contains(w.Header().Get("Content-Disposition"), "rbm-activity.csv") {
 		t.Errorf("csv headers: %v", w.Header())
+	}
+}
+
+func TestWatchdogTotalsAndOfferDetails(t *testing.T) {
+	b := newBackend()
+	if w := do(b, request{method: http.MethodPost, path: "/api/watchdog/reset"}); w.Code != http.StatusNoContent || b.watchdogResets != 1 {
+		t.Errorf("watchdog reset: %d, %d resets", w.Code, b.watchdogResets)
+	}
+	body := do(b, request{path: "/api/totals"}).Body.String()
+	for _, want := range []string{`"pool":"zpool"`, `"runs":42`, `"energy_kwh":4.616`, `"minutes":3052.77`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("totals miss %s: %s", want, body)
+		}
+	}
+	// where a miner connects to is no secret, what it logs in with is
+	body = do(b, request{path: "/api/offers"}).Body.String()
+	for _, want := range []string{`"host":"kawpow.eu.mine.zpool.ca"`, `"port":1325`, `"last_block_seconds":396`, `"blocks_24h":211`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("offers miss %s: %s", want, body)
+		}
+	}
+	if strings.Contains(body, "wallet1") {
+		t.Errorf("offers leak the wallet: %s", body)
 	}
 }
 

@@ -56,6 +56,10 @@ type Backend interface {
 	// the given ones, or a class of them (engine.ResetFailed and so on).
 	ResetBenchmarks(which string, hashKeys []string)
 	Enable(hashKey string)
+	// ResetWatchdog forgets all recent failures of miners.
+	ResetWatchdog()
+	// Totals sums up the recorded miner runs per pool.
+	Totals() ([]stats.Total, error)
 	Log() []string
 	MinerLogs() ([]LogFile, error)
 	MinerLog(name string) (string, error)
@@ -145,8 +149,10 @@ func Handler(b Backend) http.Handler {
 		out := make([]offerJSON, len(offers))
 		for i, o := range offers {
 			out[i] = offerJSON{Pool: o.Pool, Algorithm: o.Algorithm, Coin: o.Coin, CoinName: o.CoinName,
+				Host: o.Host, Port: o.Port,
 				Price: o.Price, Price24h: o.Price24h, Actual24h: o.Actual24h, FeePercent: o.FeePercent,
-				Hashrate: o.Hashrate, Workers: o.Workers, Updated: o.Updated}
+				Hashrate: o.Hashrate, Workers: o.Workers,
+				LastBlockSeconds: o.LastBlockSeconds, Blocks24h: o.Blocks24h, Updated: o.Updated}
 		}
 		writeJSON(w, out)
 	})
@@ -229,6 +235,21 @@ func Handler(b Backend) http.Handler {
 		w.WriteHeader(http.StatusNoContent)
 	})
 	mux.HandleFunc("POST /api/candidates/enable", action(b.Enable))
+	mux.HandleFunc("POST /api/watchdog/reset", func(w http.ResponseWriter, r *http.Request) {
+		b.ResetWatchdog()
+		w.WriteHeader(http.StatusNoContent)
+	})
+	mux.HandleFunc("GET /api/totals", func(w http.ResponseWriter, r *http.Request) {
+		totals, err := b.Totals()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if totals == nil {
+			totals = []stats.Total{}
+		}
+		writeJSON(w, totals)
+	})
 
 	mux.HandleFunc("POST /api/pause", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
@@ -333,17 +354,22 @@ func Handler(b Backend) http.Handler {
 }
 
 type offerJSON struct {
-	Pool       string    `json:"pool"`
-	Algorithm  string    `json:"algorithm"`
-	Coin       string    `json:"coin"`
-	CoinName   string    `json:"coin_name"`
-	Price      float64   `json:"price"`
-	Price24h   float64   `json:"price_24h"`
-	Actual24h  float64   `json:"actual_24h"`
-	FeePercent float64   `json:"fee_percent"`
-	Hashrate   float64   `json:"hashrate"`
-	Workers    int       `json:"workers"`
-	Updated    time.Time `json:"updated"`
+	Pool       string  `json:"pool"`
+	Algorithm  string  `json:"algorithm"`
+	Coin       string  `json:"coin"`
+	CoinName   string  `json:"coin_name"`
+	Host       string  `json:"host"`
+	Port       int     `json:"port"`
+	Price      float64 `json:"price"`
+	Price24h   float64 `json:"price_24h"`
+	Actual24h  float64 `json:"actual_24h"`
+	FeePercent float64 `json:"fee_percent"`
+	Hashrate   float64 `json:"hashrate"`
+	Workers    int     `json:"workers"`
+	// 0 where the pool does not say
+	LastBlockSeconds float64   `json:"last_block_seconds"`
+	Blocks24h        float64   `json:"blocks_24h"`
+	Updated          time.Time `json:"updated"`
 }
 
 // guard decides who may use the interface. It can change the payout address,

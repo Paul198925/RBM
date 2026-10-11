@@ -142,7 +142,16 @@ func TestActivityComesFromTheStore(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	if totals, err := app.Totals(); err != nil || len(totals) != 0 {
+		t.Errorf("totals without a store: %v, %v", totals, err)
+	}
 	app.setStore(store)
+	totals, err := app.Totals()
+	// everything that is kept counts for the totals, also what is older than the activity list shows
+	if err != nil || len(totals) != 1 || totals[0].Pool != "zpool" || totals[0].Runs != 3 || totals[0].Minutes != 30 {
+		t.Errorf("totals = %+v, %v", totals, err)
+	}
+	app.ResetWatchdog() // without an engine there is nothing to reset
 	runs, err := app.Activity()
 	if err != nil {
 		t.Fatal(err)

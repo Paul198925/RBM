@@ -49,6 +49,15 @@ type GroupStatus struct {
 
 	Candidates []CandidateStatus `json:"candidates"`
 	Disabled   []DisabledStatus  `json:"disabled"`
+	// Crashes lists what failed lately without being taken out yet.
+	Crashes []CrashStatus `json:"crashes"`
+}
+
+// CrashStatus counts the recent failures of a miner on an algorithm.
+type CrashStatus struct {
+	HashKey string    `json:"hash_key"`
+	Count   int       `json:"count"`
+	Last    time.Time `json:"last"`
 }
 
 // CandidateStatus is one thing a group could mine.
@@ -103,7 +112,14 @@ func (e *Engine) publish(now time.Time) {
 			Reason:     g.decision.Reason,
 			Candidates: make([]CandidateStatus, 0, len(g.options)),
 			Disabled:   make([]DisabledStatus, 0, len(g.disabled)),
+			Crashes:    make([]CrashStatus, 0, len(g.crashes)),
 		}
+		for id, times := range g.crashes {
+			if len(times) > 0 {
+				gs.Crashes = append(gs.Crashes, CrashStatus{HashKey: id, Count: len(times), Last: times[len(times)-1]})
+			}
+		}
+		sort.Slice(gs.Crashes, func(i, j int) bool { return gs.Crashes[i].HashKey < gs.Crashes[j].HashKey })
 		if r := g.run; r != nil {
 			gs.State = "mining"
 			if r.benchmark {
