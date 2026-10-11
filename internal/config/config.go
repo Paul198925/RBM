@@ -143,7 +143,7 @@ func (p Pools) ZpoolReady() error {
 		return errors.New("zpool is not enabled")
 	}
 	if p.ZpoolWallet() == "" {
-		return errors.New("the zpool wallet address is not set")
+		return fmt.Errorf("the zpool wallet address is not set: there is no wallet for %s, the coin it pays out in", z.Currency)
 	}
 	if !z.AlgoSwitching && !z.CoinMining {
 		return errors.New("zpool has both algorithm switching and coin mining turned off")
@@ -186,7 +186,9 @@ func (p Pools) CoinPoolReady(name string) error {
 // mined.
 type Zpool struct {
 	Enabled bool `yaml:"enabled" json:"enabled"`
-	// Wallet is the payout address. It must be an address of Currency.
+	// Wallet is a payout address for zpool alone. It is only kept where
+	// it differs from the wallet of Currency in the list of wallets, which
+	// is where addresses belong; Validate moves it there otherwise.
 	Wallet string `yaml:"wallet" json:"wallet"`
 	// Currency is the coin zpool pays out in: BTC, LTC, DOGE, ...
 	Currency string `yaml:"currency" json:"currency"`
@@ -363,6 +365,11 @@ func (c *Config) Validate() error {
 		wallets[coin] = address
 	}
 	c.Pools.Wallets = wallets
+	// the wallets are kept in one place: an address that was entered for
+	// zpool alone becomes the wallet of its payout coin, if that has none
+	if own := wallets[z.Currency]; z.Wallet != "" && (own == "" || own == z.Wallet) {
+		wallets[z.Currency], z.Wallet = z.Wallet, ""
+	}
 
 	for _, name := range CoinPoolNames {
 		t := c.Pools.CoinPool(name)

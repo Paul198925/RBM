@@ -194,7 +194,7 @@ const PAGES = {
   '': 'dashboard', console: 'console', devices: 'devices',
   bestpools: 'bestpools', allpools: 'allpools', earnings: 'earnings', totals: 'totals', payouts: 'payouts',
   miners: 'miners', benchmarks: 'benchmarks', activity: 'activity', watchdog: 'watchdog',
-  setup: 'setup', setuppools: 'setuppools', setupminers: 'setupminers', setupalgorithms: 'setupalgorithms', setupdevices: 'setupdevices',
+  setup: 'setup', setupwallets: 'setupwallets', setuppools: 'setuppools', setupminers: 'setupminers', setupalgorithms: 'setupalgorithms', setupdevices: 'setupdevices',
   // names of earlier versions
   pools: 'allpools', config: 'setup', logs: 'console',
 };
@@ -736,6 +736,7 @@ function toggleList(items, path, text) {
 
 const SETUP = {
   setup: ['Setup', 'config.yaml', setupGeneral],
+  setupwallets: ['Setup Wallets', 'pools.yaml', setupWallets],
   setuppools: ['Setup Pools', 'pools.yaml', setupPools],
   setupminers: ['Setup Miners', 'miners.yaml', setupMiners],
   setupalgorithms: ['Setup Algorithms', 'algorithms.yaml', setupAlgorithms],
@@ -802,24 +803,67 @@ function storeWallets() {
   state.draft.pools.wallets = wallets;
 }
 
+// walletUsers names the pools that use the wallet of a coin, as the draft
+// has them set up.
+function walletUsers(coin) {
+  const pools = state.draft.pools;
+  const users = [];
+  if (pools.zpool.enabled && pools.zpool.currency === coin && !pools.zpool.wallet) users.push('zpool (all payouts)');
+  for (const pool of state.meta.coin_pools) {
+    const settings = pools[pool.key];
+    if (settings.enabled && pool.coins.some(c => c.symbol === coin) && !settings.exclude_coins.includes(coin)) users.push(pool.title);
+  }
+  return users;
+}
+
 function setupWallets() {
   const known = new Map();
   for (const pool of state.meta.coin_pools) for (const c of pool.coins) known.set(c.symbol, c.name);
   for (const c of state.meta.payout_currencies) if (!known.has(c.symbol)) known.set(c.symbol, c.name);
   const rows = walletRows();
+  const have = new Set(rows.map(r => r.coin.trim().toUpperCase()));
+  // what the enabled pools could do with a wallet they do not have yet
+  const missing = [];
+  const pools = state.draft.pools;
+  if (pools.zpool.enabled && !pools.zpool.wallet && !have.has(pools.zpool.currency)) missing.push(pools.zpool.currency + ' (zpool pays out in it)');
+  for (const pool of state.meta.coin_pools) {
+    if (!pools[pool.key].enabled) continue;
+    const coins = pool.coins.map(c => c.symbol).filter(s => !have.has(s) && !pools[pool.key].exclude_coins.includes(s));
+    if (coins.length) missing.push(coins.join(', ') + ' (' + pool.title + ')');
+  }
+  const users = row => {
+    const coin = row.coin.trim().toUpperCase();
+    const list = coin ? walletUsers(coin) : [];
+    return list.length ? list.join(', ') : h('span', { class: 'help' }, coin ? 'no enabled pool' : '');
+  };
   const line = row => h('tr', {},
     h('td', {}, h('input', { type: 'text', list: 'wallet-coins', placeholder: 'RVN', size: '8', value: row.coin,
       oninput: e => { row.coin = e.target.value; storeWallets(); } })),
     h('td', {}, h('input', { type: 'text', class: 'wide', placeholder: 'address', value: row.address, spellcheck: 'false',
       oninput: e => { row.address = e.target.value; storeWallets(); } })),
+    h('td', { class: 'users' }, users(row)),
     h('td', {}, h('button', { class: 'small', onclick: () => { rows.splice(rows.indexOf(row), 1); storeWallets(); render(); } }, 'Remove')));
   return h('div', { class: 'section' }, h('h3', {}, 'Wallets'),
-    h('p', { class: 'help' }, 'One payout address per coin. ' + state.meta.coin_pools.map(p => p.title).join(' and ') + ' pay every coin to its own wallet and mine the coins that have one here. zpool uses the wallet of its payout coin unless it has an address of its own below. rbm cannot check an address; a wrong one is only noticed by the pool, or not at all.'),
+    h('p', { class: 'help' }, 'One payout address per coin, used by every pool that can. ' + state.meta.coin_pools.map(p => p.title).join(' and ') + ' pay every coin to its own wallet and mine the coins that have one here. zpool pays everything to the wallet of its payout coin. rbm cannot check an address; a wrong one is only noticed by the pool, or not at all.'),
     rows.length ? h('table', { class: 'wallets' },
-      h('thead', {}, h('tr', {}, h('th', {}, 'Coin'), h('th', {}, 'Address'), h('th', {}))),
-      h('tbody', {}, rows.map(line))) : null,
+      h('thead', {}, h('tr', {}, h('th', {}, 'Coin'), h('th', {}, 'Address'), h('th', {}, 'Used by'), h('th', {}))),
+      h('tbody', {}, rows.map(line))) : h('div', { class: 'empty' }, 'No wallet yet.'),
     h('datalist', { id: 'wallet-coins' }, Array.from(known).map(([symbol, name]) => h('option', { value: symbol }, name))),
-    h('div', { class: 'go' }, h('button', { onclick: () => { rows.push({ coin: '', address: '' }); render(); } }, 'Add a wallet')));
+    h('div', { class: 'go' }, h('button', { onclick: () => { rows.push({ coin: '', address: '' }); render(); } }, 'Add a wallet')),
+    missing.length ? h('p', { class: 'help' }, 'The enabled pools could also use a wallet for: ' + missing.join('; ') + '.') : null);
+}
+
+// zpoolWalletField says which wallet zpool pays to. An address of its own
+// is only shown where an older configuration still has one that differs.
+function zpoolWalletField() {
+  const pools = state.draft.pools;
+  if (pools.zpool.wallet) {
+    return textField('Wallet', 'pools.zpool.wallet', 'An address for zpool alone, from an older configuration. Empty it to use the ' + pools.zpool.currency + ' wallet from Setup Wallets like every other pool.');
+  }
+  const address = pools.wallets[pools.zpool.currency];
+  return field('Wallet', 'zpool pays to the wallet of its payout coin. Wallets are set under Setup Wallets.',
+    address ? h('code', {}, address)
+      : h('span', { class: 'error' }, 'There is no ' + pools.zpool.currency + ' wallet yet. ', h('a', { href: '#/setupwallets' }, 'Add one')));
 }
 
 // setupCoinPool is the section of a pool that pays in the mined coin.
@@ -831,7 +875,7 @@ function setupCoinPool(pool) {
   const bySymbol = {};
   for (const c of pool.coins) bySymbol[c.symbol] = c;
   return h('div', { class: 'section' }, h('h3', {}, pool.title),
-    boolField('Use this pool', base + '.enabled', 'It pays in the coin that is mined, to the wallet of that coin from the list above, and keeps ' + pool.fee_percent + ' %.'),
+    boolField('Use this pool', base + '.enabled', 'It pays in the coin that is mined, to the wallet of that coin from Setup Wallets, and keeps ' + pool.fee_percent + ' %.'),
     pool.regions.length > 1
       ? selectField('Region', base + '.region', 'The stratum servers to connect to.', pool.regions.map(r => ({ value: r, text: r })))
       : null,
@@ -848,14 +892,13 @@ function setupPools() {
     (chosen && chosen.minimum_payout ? ' Minimum payout: ' + chosen.minimum_payout + ' ' + chosen.symbol + '.' : '') +
     (chosen && chosen.notice ? ' Notice from zpool: ' + chosen.notice : '');
   return [
-    setupWallets(),
     state.meta.coin_pools.map(setupCoinPool),
     h('div', { class: 'section' }, h('h3', {}, 'Zpool'),
       boolField('Use this pool', 'pools.zpool.enabled', 'A pool that pays everything out in one coin, whatever is mined.'),
       currencies.length
         ? selectField('Payout coin', 'pools.zpool.currency', currencyHelp, currencies)
         : textField('Payout coin', 'pools.zpool.currency', 'zpool could not be asked for its list; enter the symbol, e.g. BTC, LTC or RVN.'),
-      textField('Wallet', 'pools.zpool.wallet', 'An address of the payout coin. Leave it empty to use the wallet of the payout coin from the list above.'),
+      zpoolWalletField(),
       selectField('Region', 'pools.zpool.region', 'The stratum servers to connect to.', state.meta.zpool_regions.map(r => ({ value: r, text: r }))),
       boolField('SSL', 'pools.zpool.tls', 'Encrypt the connection to the pool where it has a port for it.')),
     h('div', { class: 'section' }, h('h3', {}, 'What to mine at Zpool'),
@@ -964,7 +1007,7 @@ const VIEWS = {
   dashboard: renderDashboard, console: renderConsole, devices: renderDevices,
   bestpools: renderBestPools, allpools: renderAllPools, earnings: renderEarnings, totals: renderTotals, payouts: renderPayouts,
   miners: renderMiners, benchmarks: renderBenchmarks, activity: renderActivity, watchdog: renderWatchdog,
-  setup: renderSetup, setuppools: renderSetup, setupminers: renderSetup, setupalgorithms: renderSetup, setupdevices: renderSetup,
+  setup: renderSetup, setupwallets: renderSetup, setuppools: renderSetup, setupminers: renderSetup, setupalgorithms: renderSetup, setupdevices: renderSetup,
 };
 
 // what each page needs besides the status

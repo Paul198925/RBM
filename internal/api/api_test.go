@@ -273,7 +273,7 @@ func TestConfigReadHidesThePassword(t *testing.T) {
 	if w.Code != http.StatusOK || strings.Contains(body, "s3cret") || !strings.Contains(body, `"password":"********"`) {
 		t.Errorf("%d: %s", w.Code, body)
 	}
-	for _, want := range []string{`"wallet":"wallet1"`, `"zpool_regions":["na","eu","sea","jp"]`, `"name":"rigel"`, `"symbol":"BTC"`} {
+	for _, want := range []string{`"wallets":{"BTC":"wallet1"}`, `"zpool_regions":["na","eu","sea","jp"]`, `"name":"rigel"`, `"symbol":"BTC"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("config misses %s: %s", want, body)
 		}
@@ -293,7 +293,7 @@ func TestConfigSave(t *testing.T) {
 		t.Fatalf("%d: %s", w.Code, w.Body)
 	}
 	got := b.saved
-	if got.General.Worker != "rig9" || got.General.API.Password != "s3cret" || got.Pools.Zpool.Wallet != "wallet1" {
+	if got.General.Worker != "rig9" || got.General.API.Password != "s3cret" || got.Pools.Wallets["BTC"] != "wallet1" {
 		t.Errorf("general %+v, zpool %+v", got.General, got.Pools.Zpool)
 	}
 	if got.Pools.Zpool.Currency != "LTC" || len(got.Pools.Zpool.ExcludeCoins) != 1 || !got.Miners["wildrig"].Disabled {

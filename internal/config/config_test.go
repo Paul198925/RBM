@@ -80,7 +80,8 @@ func TestLoadDirReadsEveryFile(t *testing.T) {
 
 	// symbols come out upper case, sorted, without duplicates
 	z := cfg.Pools.Zpool
-	if z.Wallet != "addr1" || z.Currency != "LTC" || z.AlgoSwitching || !z.CoinMining || !z.Enabled {
+	// the address given for zpool is the wallet of its payout coin
+	if z.Wallet != "" || cfg.Pools.Wallets["LTC"] != "addr1" || z.Currency != "LTC" || z.AlgoSwitching || !z.CoinMining || !z.Enabled {
 		t.Errorf("zpool = %+v", z)
 	}
 	if !reflect.DeepEqual(z.Coins, []string{"CLORE", "RVN"}) || !reflect.DeepEqual(z.ExcludeCoins, []string{"SCC"}) {
@@ -158,6 +159,39 @@ func TestReadyToMine(t *testing.T) {
 	cfg.Pools.Zpool.Wallet, cfg.Pools.Zpool.Enabled = "addr", false
 	if err := cfg.ReadyToMine(); err == nil || !strings.Contains(err.Error(), "no pool") {
 		t.Errorf("ready without a pool: %v", err)
+	}
+}
+
+func TestWalletsAreKeptInOnePlace(t *testing.T) {
+	// an address entered for zpool alone becomes the wallet of its coin
+	cfg := Default()
+	cfg.Pools.Zpool.Wallet, cfg.Pools.Zpool.Currency = " RAddr1 ", "rvn"
+	if err := cfg.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Pools.Zpool.Wallet != "" || cfg.Pools.Wallets["RVN"] != "RAddr1" || cfg.Pools.ZpoolWallet() != "RAddr1" || cfg.ReadyToMine() != nil {
+		t.Errorf("zpool %+v, wallets %v", cfg.Pools.Zpool, cfg.Pools.Wallets)
+	}
+	// with another payout coin it needs that coin's wallet
+	cfg.Pools.Zpool.Currency = "LTC"
+	if err := cfg.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.ReadyToMine(); err == nil || !strings.Contains(err.Error(), "no wallet for LTC") {
+		t.Errorf("ready without an LTC wallet: %v", err)
+	}
+
+	// the same address twice is one wallet
+	cfg = Default()
+	cfg.Pools.Zpool.Wallet, cfg.Pools.Wallets["BTC"] = "bc1same", "bc1same"
+	if err := cfg.Validate(); err != nil || cfg.Pools.Zpool.Wallet != "" || len(cfg.Pools.Wallets) != 1 {
+		t.Errorf("zpool %+v, wallets %v, %v", cfg.Pools.Zpool, cfg.Pools.Wallets, err)
+	}
+	// an address that differs from the coin's wallet is not thrown away
+	cfg = Default()
+	cfg.Pools.Zpool.Wallet, cfg.Pools.Wallets["BTC"] = "bc1own", "bc1list"
+	if err := cfg.Validate(); err != nil || cfg.Pools.Zpool.Wallet != "bc1own" || cfg.Pools.Wallets["BTC"] != "bc1list" || cfg.Pools.ZpoolWallet() != "bc1own" {
+		t.Errorf("zpool %+v, wallets %v, %v", cfg.Pools.Zpool, cfg.Pools.Wallets, err)
 	}
 }
 
@@ -337,7 +371,7 @@ func TestMigrateLegacy(t *testing.T) {
 		t.Fatal(err)
 	}
 	z := cfg.Pools.Zpool
-	if cfg.General.Worker != "GoTest" || z.Wallet != "RWallet1" || z.Currency != "RVN" || z.Region != "na" {
+	if cfg.General.Worker != "GoTest" || cfg.Pools.ZpoolWallet() != "RWallet1" || cfg.Pools.Wallets["RVN"] != "RWallet1" || z.Currency != "RVN" || z.Region != "na" {
 		t.Errorf("general %+v, zpool %+v", cfg.General, z)
 	}
 	if cfg.General.Power.PricePerKWh != 0.3 || !cfg.General.CPU.Enabled || cfg.General.API.Listen != "127.0.0.1:4000" {

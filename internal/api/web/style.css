@@ -241,6 +241,8 @@ table.wallets { width: 100%; margin: 8px 0; }
 table.wallets td { padding: 4px 8px 4px 0; border: 0; background: none; }
 table.wallets th { padding: 2px 8px 2px 0; background: none; border: 0; }
 table.wallets input.wide { width: 100%; min-width: 260px; font-family: var(--mono); }
+table.wallets td.users { color: var(--muted); font-size: 13px; white-space: nowrap; }
+.field .error { color: var(--bad); }
 .section .go { padding-top: 6px; }
 .section p.help { margin: 2px 0 6px; }
 p.lead { margin: -8px 0 16px; color: var(--muted); }
