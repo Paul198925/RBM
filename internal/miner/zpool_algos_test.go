@@ -10,11 +10,16 @@ import (
 // megamec is missing on purpose: only versions of miner programs from 2021
 // and 2022 mine it.
 var zpoolAlgorithms = strings.Fields(`allium anime argon2d1000 argon2d16000 argon2d4096 argon2d500 balloon bmw512 curve
-	equihash equihash144 equihash192 evrprogpow firopow flex ghostrider groestl heavyhash hmq1725 hoohashpepew kawpow
-	lyra2v2 lyra2z330 m7m megabtx meowpow meraki mike minotaurx myrgr neoscrypt neoscryptxaya odocrypt phihash power2b
-	quark qubit rinhash sccpow scrypt scryptn2 sha256 sha3256t sha512256d skein skein2 skydoge soterg timetravel tribus
-	verthash verushash whirlpool whirlpoolx2 x11 x13 x16rt x16rv2 x21s x25x yescrypt yescryptr16 yescryptr32 yescryptr8 yespower
+	equihash144 equihash192 evrprogpow firopow flex ghostrider heavyhash hmq1725 hoohashpepew kawpow
+	lyra2z330 m7m megabtx meowpow meraki mike minotaurx neoscryptxaya phihash power2b
+	rinhash sccpow scryptn2 sha3256t sha512256d skein2 skydoge soterg timetravel
+	verthash verushash whirlpool whirlpoolx2 x16rt x16rv2 x21s x25x yescrypt yescryptr16 yescryptr32 yescryptr8 yespower
 	yespoweradvc yespowereqpay yespowerltncg yespowermgpc yespowerr16 yespowersmt yespowersugar yespowertide yespowerurx`)
+
+// What ASICs or FPGAs mine at zpool.ca. No miner program is offered these:
+// a graphics card or CPU earns next to nothing there, and measuring them
+// only costs time.
+var asicAlgorithms = strings.Fields(`equihash groestl lyra2v2 myrgr neoscrypt odocrypt quark qubit scrypt sha256 skein tribus x11 x13`)
 
 func TestEveryZpoolAlgorithmHasAMiner(t *testing.T) {
 	defs, err := Builtin()
@@ -31,6 +36,13 @@ func TestEveryZpoolAlgorithmHasAMiner(t *testing.T) {
 			t.Errorf("no miner for %s", name)
 		}
 	}
+	for _, name := range asicAlgorithms {
+		for _, def := range defs {
+			if _, ok := def.Algorithm(name); ok {
+				t.Errorf("%s mines %s, which is left to ASICs", def.Name, name)
+			}
+		}
+	}
 	// no definition lists an algorithm twice
 	for _, def := range defs {
 		var seen []string
@@ -45,8 +57,7 @@ func TestEveryZpoolAlgorithmHasAMiner(t *testing.T) {
 
 func TestZpoolNamesAreTranslated(t *testing.T) {
 	ccminer := builtin1(t, "ccminer-tpfuemp")
-	for name, want := range map[string]string{"myrgr": "myr-gr", "neoscryptxaya": "xaya", "odocrypt": "odo", "sha256": "sha256d",
-		"sha3256t": "sha3t", "x11": "x11", "yespowersmt": "yespowersmt"} {
+	for name, want := range map[string]string{"neoscryptxaya": "xaya", "sha3256t": "sha3t", "yespowersmt": "yespowersmt"} {
 		a, ok := ccminer.Algorithm(name)
 		if !ok || a.NameForMiner() != want {
 			t.Errorf("%s is called %q, want %q", name, a.NameForMiner(), want)
