@@ -93,7 +93,7 @@ rbm [-config dir] <command>
   mine        run one miner on one algorithm, for testing
 ```
 
-`start.bat` and `start.sh` run `rbm run`.
+`start.bat` and `start.sh` run `rbm run`. In a checkout of this repository they build the program first if it is not there yet and Go is installed.
 
 ### Configuration
 
