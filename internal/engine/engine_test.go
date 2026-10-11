@@ -25,7 +25,9 @@ const (
 // fakeSource is a pool with adjustable prices.
 type fakeSource struct {
 	prices map[string]float64
-	err    error
+	// coins holds single-coin offers: algorithm, then coin, then price
+	coins map[string]map[string]float64
+	err   error
 }
 
 func (f *fakeSource) Name() string { return "fakepool" }
@@ -38,6 +40,12 @@ func (f *fakeSource) Fetch(ctx context.Context) ([]pool.Offer, error) {
 	for name, price := range f.prices {
 		offers = append(offers, pool.Offer{Pool: f.Name(), Algorithm: name, PoolAlgorithm: name,
 			Host: name + ".example", Port: 1234, User: "wallet", Pass: "x", Price: price})
+	}
+	for name, coins := range f.coins {
+		for coin, price := range coins {
+			offers = append(offers, pool.Offer{Pool: f.Name(), Algorithm: name, PoolAlgorithm: name, Coin: coin,
+				Host: name + ".example", Port: 1234, User: "wallet", Pass: "x,zap=" + coin, Price: price})
+		}
 	}
 	return offers, nil
 }
@@ -96,8 +104,11 @@ type sim struct {
 	launchErr error
 
 	launches []string
-	miners   []*fakeMiner
-	logs     []string
+	// where each launch mines, and with which extra arguments
+	targets   []string
+	extraArgs [][]string
+	miners    []*fakeMiner
+	logs      []string
 }
 
 func newSim(t *testing.T, opts Options, prices map[string]float64) *sim {
@@ -146,6 +157,8 @@ func newSim(t *testing.T, opts Options, prices map[string]float64) *sim {
 		},
 		Launch: func(ctx context.Context, spec LaunchSpec) (Miner, error) {
 			s.launches = append(s.launches, spec.Algorithm.Name)
+			s.targets = append(s.targets, spec.Definition.Name+"/"+spec.Algorithm.Name+"@"+spec.Offer.Label())
+			s.extraArgs = append(s.extraArgs, spec.ExtraArgs)
 			if s.launchErr != nil {
 				return nil, s.launchErr
 			}

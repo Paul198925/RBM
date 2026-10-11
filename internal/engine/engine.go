@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -65,6 +66,20 @@ type Options struct {
 	CPUWatts float64
 	// CPUThreads limits the CPU miner, 0 lets the miner decide.
 	CPUThreads int
+
+	// Miners holds the settings per miner program, by name.
+	Miners map[string]MinerOptions
+	// OnlyAlgorithms limits mining to these, empty allows all;
+	// ExcludeAlgorithms are never mined.
+	OnlyAlgorithms    []string
+	ExcludeAlgorithms []string
+}
+
+// MinerOptions are the user's settings for one miner program.
+type MinerOptions struct {
+	Disabled          bool
+	ExcludeAlgorithms []string
+	ExtraArgs         []string
 }
 
 // Deps is what the engine works with. Everything that touches the outside
@@ -98,8 +113,12 @@ type Engine struct {
 	rateTried time.Time
 	params    selector.Params
 
-	mu     sync.Mutex
-	status Status
+	// what other goroutines may touch
+	mu       sync.Mutex
+	status   Status
+	offerSet []pool.Offer
+	commands []func()
+	wake     chan struct{}
 }
 
 // group is a set of identical devices that mine together with one miner.
@@ -109,7 +128,8 @@ type group struct {
 	devices []device.Device
 
 	run *run
-	// failures and the time a candidate is taken out until, by candidate ID
+	// failures and the time a miner on an algorithm is taken out until,
+	// by hashrate key
 	crashes  map[string][]time.Time
 	disabled map[string]time.Time
 
@@ -118,13 +138,21 @@ type group struct {
 	decision selector.Decision
 }
 
-// option is a candidate together with what is needed to start it.
+// option is a candidate together with what is needed to start it. Its ID
+// names miner, algorithm, devices and the offer; hashKey leaves the offer
+// out, because the speed of a miner does not depend on where it mines.
 type option struct {
 	selector.Candidate
+	hashKey  string
+	powerKey string
 	def      *miner.Definition
 	algo     miner.Algorithm
 	offer    pool.Offer
-	powerKey string
+}
+
+// label names the option for logs: "rigel/kawpow at zpool:CLORE".
+func (o option) label() string {
+	return o.def.Name + "/" + o.algo.Name + " at " + o.offer.Label()
 }
 
 // run is a started miner.
@@ -155,6 +183,7 @@ func New(opts Options, deps Deps) (*Engine, error) {
 		groups:   groupDevices(deps.Devices, opts.CPUEnabled),
 		offers:   map[string][]pool.Offer{},
 		offersAt: map[string]time.Time{},
+		wake:     make(chan struct{}, 1),
 	}
 	if len(e.groups) == 0 {
 		return nil, errors.New("no device found to mine with")
@@ -247,13 +276,18 @@ func (e *Engine) Run(ctx context.Context) error {
 			return err
 		}
 		next := time.Now().Add(e.opts.Interval)
+	wait:
 		for time.Now().Before(next) {
 			select {
 			case <-ctx.Done():
 				return nil
+			case <-e.wake:
+				// a command from the interface does not wait for the
+				// end of the round
+				break wait
 			case <-time.After(pollInterval):
 			}
-			// a miner that died does not wait for the end of the round
+			// a miner that died does not wait either
 			if e.poll(ctx, time.Now()) {
 				break
 			}
@@ -264,12 +298,64 @@ func (e *Engine) Run(ctx context.Context) error {
 	}
 }
 
+// do queues fn to run on the engine's goroutine at the start of the next
+// round, and starts that round at once. It is how other goroutines change
+// anything in the engine.
+func (e *Engine) do(fn func()) {
+	e.mu.Lock()
+	e.commands = append(e.commands, fn)
+	e.mu.Unlock()
+	select {
+	case e.wake <- struct{}{}:
+	default:
+	}
+}
+
+func (e *Engine) runCommands() {
+	e.mu.Lock()
+	commands := e.commands
+	e.commands = nil
+	e.mu.Unlock()
+	for _, fn := range commands {
+		fn()
+	}
+}
+
+// ResetBenchmark forgets what was measured for a miner on an algorithm, so
+// that it is benchmarked again. It is safe to call from any goroutine.
+func (e *Engine) ResetBenchmark(hashKey string) {
+	e.do(func() {
+		for _, key := range []string{hashKey, powerKeyFor(hashKey)} {
+			if err := e.deps.Store.Delete(key); err != nil {
+				e.deps.Logf("reset %s: %v", key, err)
+				return
+			}
+		}
+		e.deps.Logf("benchmark of %s was reset", hashKey)
+	})
+}
+
+// Enable puts a miner on an algorithm back into the selection before its
+// penalty is over. It is safe to call from any goroutine.
+func (e *Engine) Enable(hashKey string) {
+	e.do(func() {
+		for _, g := range e.groups {
+			if _, out := g.disabled[hashKey]; out {
+				delete(g.disabled, hashKey)
+				delete(g.crashes, hashKey)
+				e.deps.Logf("%s: %s is enabled again", g.name, hashKey)
+			}
+		}
+	})
+}
+
 // round stores what was measured, checks on the running miners and makes
 // every group mine what the selector picks.
 func (e *Engine) round(ctx context.Context, now time.Time) error {
 	if err := e.store(now); err != nil {
 		return err
 	}
+	e.runCommands()
 	if err := e.refreshOffers(ctx, now); err != nil {
 		return err
 	}
@@ -303,14 +389,14 @@ func (e *Engine) round(ctx context.Context, now time.Time) error {
 		}
 
 		running, locked := "", false
-		if g.run != nil {
-			running = g.run.ID
-			locked = g.run.benchmark || now.Sub(g.run.started) < e.opts.MinRunTime
+		if r := g.run; r != nil {
+			running = r.ID
+			locked = r.benchmark || now.Sub(r.started) < e.opts.MinRunTime
 			// a finished benchmark frees the group for the next one
-			if o, ok := byID[running]; ok && g.run.benchmark && o.Benchmarked {
-				g.run.benchmark = false
+			if o, ok := byID[running]; ok && r.benchmark && o.Benchmarked {
+				r.benchmark = false
 				locked = false
-				e.deps.Logf("%s: benchmark of %s done: %s", g.name, running, formatHashrate(o.Hashrate))
+				e.deps.Logf("%s: benchmark of %s done: %s", g.name, r.hashKey, formatHashrate(o.Hashrate))
 			}
 		}
 
@@ -320,7 +406,7 @@ func (e *Engine) round(ctx context.Context, now time.Time) error {
 		}
 		if decision.ID != running {
 			if g.run != nil {
-				e.deps.Logf("%s: stopping %s", g.name, running)
+				e.deps.Logf("%s: stopping %s", g.name, g.run.label())
 				e.stop(g)
 			}
 			if decision.ID != "" {
@@ -333,6 +419,12 @@ func (e *Engine) round(ctx context.Context, now time.Time) error {
 			// keep the price and profit figures of the running miner current
 			if o, ok := byID[running]; ok {
 				g.run.option = o
+			}
+			// a benchmark that was reset is measured again by the miner
+			// that is running anyway
+			if decision.Benchmark && !g.run.benchmark {
+				g.run.benchmark = true
+				e.deps.Logf("%s: benchmarking %s again", g.name, g.run.label())
 			}
 		}
 		g.options, g.decision = options, decision
@@ -349,9 +441,9 @@ func (e *Engine) checkRun(g *group, now time.Time) {
 	}
 	select {
 	case <-r.miner.Done():
-		e.deps.Logf("%s: %s exited on its own (%s)", g.name, r.ID, r.miner.ExitText())
+		e.deps.Logf("%s: %s exited on its own (%s)", g.name, r.label(), r.miner.ExitText())
 		e.stop(g)
-		e.failed(g, r.ID, now, false)
+		e.failed(g, r.hashKey, now, false)
 		return
 	default:
 	}
@@ -363,37 +455,64 @@ func (e *Engine) checkRun(g *group, now time.Time) {
 	if now.Sub(silentSince) < watchdogTimeout {
 		return
 	}
-	e.deps.Logf("%s: %s reported no hashrate for %v", g.name, r.ID, now.Sub(silentSince).Round(time.Second))
+	e.deps.Logf("%s: %s reported no hashrate for %v", g.name, r.label(), now.Sub(silentSince).Round(time.Second))
 	e.stop(g)
-	e.failed(g, r.ID, now, r.benchmark)
+	e.failed(g, r.hashKey, now, r.benchmark)
 }
 
-// failed counts a failure of candidate id. A benchmark that produced nothing
-// takes the candidate out at once, a miner that keeps failing after a few
-// tries.
-func (e *Engine) failed(g *group, id string, now time.Time, benchmark bool) {
+// failed counts a failure of a miner on an algorithm. A benchmark that
+// produced nothing takes it out at once, a miner that keeps failing after a
+// few tries.
+func (e *Engine) failed(g *group, hashKey string, now time.Time, benchmark bool) {
 	if benchmark {
-		g.disabled[id] = now.Add(benchmarkPenalty)
-		e.deps.Logf("%s: benchmark of %s failed, not tried again for %v", g.name, id, benchmarkPenalty)
+		g.disabled[hashKey] = now.Add(benchmarkPenalty)
+		e.deps.Logf("%s: benchmark of %s failed, not tried again for %v", g.name, hashKey, benchmarkPenalty)
 		return
 	}
-	recent := g.crashes[id][:0]
-	for _, t := range g.crashes[id] {
+	recent := g.crashes[hashKey][:0]
+	for _, t := range g.crashes[hashKey] {
 		if now.Sub(t) < crashWindow {
 			recent = append(recent, t)
 		}
 	}
 	recent = append(recent, now)
 	if len(recent) < maxCrashes {
-		g.crashes[id] = recent
+		g.crashes[hashKey] = recent
 		return
 	}
-	delete(g.crashes, id)
-	g.disabled[id] = now.Add(crashPenalty)
-	e.deps.Logf("%s: %s failed %d times within %v, not tried again for %v", g.name, id, maxCrashes, crashWindow, crashPenalty)
+	delete(g.crashes, hashKey)
+	g.disabled[hashKey] = now.Add(crashPenalty)
+	e.deps.Logf("%s: %s failed %d times within %v, not tried again for %v", g.name, hashKey, maxCrashes, crashWindow, crashPenalty)
 }
 
-// options lists what group g could mine right now.
+// allowed reports whether the user's settings permit the miner program on
+// the algorithm.
+func (e *Engine) allowed(def *miner.Definition, algorithm string) bool {
+	if len(e.opts.OnlyAlgorithms) > 0 && !slices.Contains(e.opts.OnlyAlgorithms, algorithm) {
+		return false
+	}
+	if slices.Contains(e.opts.ExcludeAlgorithms, algorithm) {
+		return false
+	}
+	m := e.opts.Miners[def.Name]
+	return !m.Disabled && !slices.Contains(m.ExcludeAlgorithms, algorithm)
+}
+
+func powerKeyFor(hashKey string) string {
+	return "power/" + strings.TrimPrefix(hashKey, "hashrate/")
+}
+
+// priceKey names the price stat of an offer.
+func priceKey(o pool.Offer) string {
+	key := stats.PriceKey(o.Pool, o.Algorithm)
+	if o.Coin != "" {
+		key += "/" + o.Coin
+	}
+	return key
+}
+
+// options lists what group g could mine right now: every permitted miner on
+// every algorithm it supports, once per offer for that algorithm.
 func (e *Engine) options(g *group, now time.Time) ([]option, error) {
 	for id, until := range g.disabled {
 		if !now.Before(until) {
@@ -408,53 +527,75 @@ func (e *Engine) options(g *group, now time.Time) ([]option, error) {
 			continue
 		}
 		for _, a := range def.Algorithms {
-			if !fits(g, a) {
+			if !fits(g, a) || !e.allowed(def, a.Name) {
 				continue
 			}
-			offer, ok := e.bestOffer(a.Name, now)
-			if !ok {
+			offers := e.offersFor(a.Name, now)
+			if len(offers) == 0 {
 				continue
 			}
-			id := stats.HashrateKey(def.Name, g.deviceIDs(), a.Name)
-			if _, out := g.disabled[id]; out {
+			hashKey := stats.HashrateKey(def.Name, g.deviceIDs(), a.Name)
+			if _, out := g.disabled[hashKey]; out {
 				continue
 			}
-			o := option{
-				Candidate: selector.Candidate{ID: id, Price: offer.Price, FeePercent: def.FeePercent(a)},
+			base := option{
+				Candidate: selector.Candidate{FeePercent: def.FeePercent(a)},
+				hashKey:   hashKey,
+				powerKey:  powerKeyFor(hashKey),
 				def:       def,
 				algo:      a,
-				offer:     offer,
-				powerKey:  "power/" + strings.TrimPrefix(id, "hashrate/"),
 			}
-
-			// the hourly average rather than the latest figure: a price
-			// spike of a few minutes is no reason to restart miners
-			price, ok, err := e.deps.Store.Load(stats.PriceKey(offer.Pool, a.Name))
-			if err != nil {
-				return nil, err
-			}
-			if ok && !price.Empty() {
-				o.Price = price.Average(stats.Hour)
-			}
-			hashrate, ok, err := e.deps.Store.Load(id)
+			hashrate, ok, err := e.deps.Store.Load(hashKey)
 			if err != nil {
 				return nil, err
 			}
 			if ok && hashrate.Duration >= e.opts.BenchmarkTime {
-				o.Hashrate = hashrate.Average(stats.Week)
-				o.Benchmarked = true
+				base.Hashrate = hashrate.Average(stats.Week)
+				base.Benchmarked = true
 			}
-			power, ok, err := e.deps.Store.Load(o.powerKey)
+			power, ok, err := e.deps.Store.Load(base.powerKey)
 			if err != nil {
 				return nil, err
 			}
 			if ok {
-				o.PowerWatts = power.Average(stats.Week)
+				base.PowerWatts = power.Average(stats.Week)
 			}
-			options = append(options, o)
+
+			for _, offer := range offers {
+				o := base
+				o.offer = offer
+				o.ID = hashKey + "@" + offer.Label()
+				// the hourly average rather than the latest figure: a
+				// price spike of a few minutes is no reason to restart
+				o.Price = offer.Price
+				price, ok, err := e.deps.Store.Load(priceKey(offer))
+				if err != nil {
+					return nil, err
+				}
+				if ok && !price.Empty() {
+					o.Price = price.Average(stats.Hour)
+				}
+				options = append(options, o)
+			}
 		}
 	}
-	return options, nil
+
+	// what is not measured yet is measured once, where it pays best; the
+	// other offers for it would only be more benchmarks of the same thing
+	best := map[string]option{}
+	for _, o := range options {
+		if b, ok := best[o.hashKey]; !ok || o.Price > b.Price {
+			best[o.hashKey] = o
+		}
+	}
+	kept := options[:0]
+	for _, o := range options {
+		running := g.run != nil && g.run.ID == o.ID
+		if o.Benchmarked || running || best[o.hashKey].ID == o.ID {
+			kept = append(kept, o)
+		}
+	}
+	return kept, nil
 }
 
 // fits reports whether every device of g has the memory algorithm a needs.
@@ -467,22 +608,21 @@ func fits(g *group, a miner.Algorithm) bool {
 	return true
 }
 
-// bestOffer returns the best paying fresh offer for an algorithm.
-func (e *Engine) bestOffer(algorithm string, now time.Time) (pool.Offer, bool) {
-	var best pool.Offer
-	found := false
+// offersFor returns the fresh offers for an algorithm.
+func (e *Engine) offersFor(algorithm string, now time.Time) []pool.Offer {
+	var offers []pool.Offer
 	for _, source := range e.deps.Sources {
 		name := source.Name()
 		if now.Sub(e.offersAt[name]) > offerMaxAge {
 			continue
 		}
 		for _, offer := range e.offers[name] {
-			if offer.Algorithm == algorithm && (!found || offer.Price > best.Price) {
-				best, found = offer, true
+			if offer.Algorithm == algorithm {
+				offers = append(offers, offer)
 			}
 		}
 	}
-	return best, found
+	return offers
 }
 
 // refreshOffers asks the pools for their prices and feeds the price stats.
@@ -518,7 +658,7 @@ func (e *Engine) refreshOffers(ctx context.Context, now time.Time) error {
 			if !wanted[offer.Algorithm] {
 				continue
 			}
-			key := stats.PriceKey(offer.Pool, offer.Algorithm)
+			key := priceKey(offer)
 			st, _, err := e.deps.Store.Load(key)
 			if err != nil {
 				return err
@@ -529,7 +669,25 @@ func (e *Engine) refreshOffers(ctx context.Context, now time.Time) error {
 			}
 		}
 	}
+
+	var all []pool.Offer
+	for _, source := range e.deps.Sources {
+		if now.Sub(e.offersAt[source.Name()]) <= offerMaxAge {
+			all = append(all, e.offers[source.Name()]...)
+		}
+	}
+	e.mu.Lock()
+	e.offerSet = all
+	e.mu.Unlock()
 	return nil
+}
+
+// Offers returns what the pools pay according to the last answer of each.
+// It is safe to call from any goroutine.
+func (e *Engine) Offers() []pool.Offer {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.offerSet
 }
 
 // refreshRate updates the bitcoin price. Without one, electricity cannot be
@@ -562,7 +720,7 @@ func (e *Engine) start(ctx context.Context, g *group, o option, decision selecto
 	if decision.Benchmark {
 		what = "benchmarking"
 	}
-	e.deps.Logf("%s: %s %s on %s at %s (%s)", g.name, what, o.def.Name, o.algo.Name, o.offer.Pool, decision.Reason)
+	e.deps.Logf("%s: %s %s (%s)", g.name, what, o.label(), decision.Reason)
 
 	m, err := e.deps.Launch(ctx, LaunchSpec{
 		Definition: o.def,
@@ -571,13 +729,14 @@ func (e *Engine) start(ctx context.Context, g *group, o option, decision selecto
 		Offer:      o.offer,
 		TLS:        e.opts.TLS && o.offer.TLSPort != 0 && o.def.SupportsTLS(),
 		Threads:    e.threads(g),
+		ExtraArgs:  e.opts.Miners[o.def.Name].ExtraArgs,
 		DataDir:    e.opts.DataDir,
 		Tag:        g.name,
 	})
 	if err != nil {
 		if ctx.Err() == nil {
-			e.deps.Logf("%s: could not start %s: %v", g.name, o.ID, err)
-			e.failed(g, o.ID, now, false)
+			e.deps.Logf("%s: could not start %s: %v", g.name, o.label(), err)
+			e.failed(g, o.hashKey, now, false)
 		}
 		return
 	}
@@ -615,10 +774,11 @@ func (e *Engine) stop(g *group) {
 func (e *Engine) stopAll() {
 	for _, g := range e.groups {
 		if g.run != nil {
-			e.deps.Logf("%s: stopping %s", g.name, g.run.ID)
+			e.deps.Logf("%s: stopping %s", g.name, g.run.label())
 			e.stop(g)
 		}
 	}
+	e.publish(time.Now())
 }
 
 // poll reads the statistics of all running miners. It reports whether one
@@ -693,20 +853,20 @@ func (e *Engine) store(now time.Time) error {
 		}
 		span := now.Sub(since)
 
-		st, _, err := e.deps.Store.Load(r.ID)
+		st, _, err := e.deps.Store.Load(r.hashKey)
 		if err != nil {
 			return err
 		}
 		outcome := st.Update(hashrate, span, now, hashrateTolerance)
-		if err := e.deps.Store.Save(r.ID, st); err != nil {
+		if err := e.deps.Store.Save(r.hashKey, st); err != nil {
 			return err
 		}
-		if err := e.deps.Store.AddSample(r.ID, now, hashrate, power); err != nil {
+		if err := e.deps.Store.AddSample(r.hashKey, now, hashrate, power); err != nil {
 			return err
 		}
 		if outcome != stats.Accepted {
 			e.deps.Logf("%s: hashrate %s of %s was %s (stored average %s)",
-				g.name, formatHashrate(hashrate), r.ID, outcome, formatHashrate(st.Average(stats.Week)))
+				g.name, formatHashrate(hashrate), r.hashKey, outcome, formatHashrate(st.Average(stats.Week)))
 		}
 		if power > 0 {
 			pst, _, err := e.deps.Store.Load(r.powerKey)
@@ -735,8 +895,8 @@ func (e *Engine) report(g *group, decision selector.Decision, params selector.Pa
 		live = last.For(r.algo.NameForMiner())
 		power = last.PowerWatts
 	}
-	line := fmt.Sprintf("%s: %s/%s %s  %.0f W  shares %d/%d/%d",
-		g.name, r.def.Name, r.algo.Name, formatHashrate(live.Hashrate), power,
+	line := fmt.Sprintf("%s: %s %s  %.0f W  shares %d/%d/%d",
+		g.name, r.label(), formatHashrate(live.Hashrate), power,
 		live.Accepted, live.Rejected, live.Invalid)
 	if r.benchmark {
 		e.deps.Logf("%s  (benchmark)", line)

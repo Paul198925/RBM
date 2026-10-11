@@ -25,15 +25,19 @@ type GroupStatus struct {
 	State  string `json:"state"`
 	Reason string `json:"reason"`
 
-	Miner     string     `json:"miner,omitempty"`
-	Algorithm string     `json:"algorithm,omitempty"`
-	Pool      string     `json:"pool,omitempty"`
-	Since     *time.Time `json:"since,omitempty"`
-	Hashrate  float64    `json:"hashrate"`
-	Power     float64    `json:"power_watts"`
-	Accepted  int64      `json:"accepted"`
-	Rejected  int64      `json:"rejected"`
-	Invalid   int64      `json:"invalid"`
+	Miner     string `json:"miner,omitempty"`
+	Algorithm string `json:"algorithm,omitempty"`
+	Pool      string `json:"pool,omitempty"`
+	// Coin is the coin being mined, empty where the pool picks it.
+	Coin string `json:"coin,omitempty"`
+	// Running is the ID of the running candidate.
+	Running  string     `json:"running,omitempty"`
+	Since    *time.Time `json:"since,omitempty"`
+	Hashrate float64    `json:"hashrate"`
+	Power    float64    `json:"power_watts"`
+	Accepted int64      `json:"accepted"`
+	Rejected int64      `json:"rejected"`
+	Invalid  int64      `json:"invalid"`
 	// ProfitBTC is the expected profit per day of the running miner, from
 	// its stored hashrate. 0 while benchmarking.
 	ProfitBTC float64 `json:"profit_btc_per_day"`
@@ -44,22 +48,30 @@ type GroupStatus struct {
 
 // CandidateStatus is one thing a group could mine.
 type CandidateStatus struct {
-	ID          string  `json:"id"`
+	ID string `json:"id"`
+	// HashKey names miner, algorithm and devices: what a benchmark and a
+	// failure belong to, whatever the pool or coin.
+	HashKey     string  `json:"hash_key"`
 	Miner       string  `json:"miner"`
 	Algorithm   string  `json:"algorithm"`
 	Pool        string  `json:"pool"`
+	Coin        string  `json:"coin,omitempty"`
 	Benchmarked bool    `json:"benchmarked"`
 	Hashrate    float64 `json:"hashrate"`
 	// Price is in BTC per day for one hash per second.
-	Price     float64 `json:"price"`
-	Power     float64 `json:"power_watts"`
-	ProfitBTC float64 `json:"profit_btc_per_day"`
+	Price      float64 `json:"price"`
+	FeePercent float64 `json:"fee_percent"`
+	Power      float64 `json:"power_watts"`
+	// RevenueBTC is what it earns per day after the miner's fee,
+	// ProfitBTC what is left after electricity.
+	RevenueBTC float64 `json:"revenue_btc_per_day"`
+	ProfitBTC  float64 `json:"profit_btc_per_day"`
 }
 
-// DisabledStatus is a candidate that is taken out after failures.
+// DisabledStatus is a miner on an algorithm that is taken out after failures.
 type DisabledStatus struct {
-	ID    string    `json:"id"`
-	Until time.Time `json:"until"`
+	HashKey string    `json:"hash_key"`
+	Until   time.Time `json:"until"`
 }
 
 // Status returns the latest snapshot. It is safe to call from any goroutine.
@@ -92,7 +104,8 @@ func (e *Engine) publish(now time.Time) {
 				gs.ProfitBTC = selector.Profit(r.Candidate, e.params)
 			}
 			since := r.started
-			gs.Miner, gs.Algorithm, gs.Pool, gs.Since = r.def.Name, r.algo.Name, r.offer.Pool, &since
+			gs.Miner, gs.Algorithm, gs.Pool, gs.Coin = r.def.Name, r.algo.Name, r.offer.Pool, r.offer.Coin
+			gs.Running, gs.Since = r.ID, &since
 			if last, ok := r.window.Last(); ok {
 				live := last.For(r.algo.NameForMiner())
 				gs.Hashrate, gs.Power = live.Hashrate, last.PowerWatts
@@ -102,23 +115,27 @@ func (e *Engine) publish(now time.Time) {
 		for _, o := range g.options {
 			cs := CandidateStatus{
 				ID:          o.ID,
+				HashKey:     o.hashKey,
 				Miner:       o.def.Name,
 				Algorithm:   o.algo.Name,
 				Pool:        o.offer.Pool,
+				Coin:        o.offer.Coin,
 				Benchmarked: o.Benchmarked,
 				Hashrate:    o.Hashrate,
 				Price:       o.Price,
+				FeePercent:  o.FeePercent,
 				Power:       o.PowerWatts,
 			}
 			if o.Benchmarked {
+				cs.RevenueBTC = selector.Revenue(o.Candidate)
 				cs.ProfitBTC = selector.Profit(o.Candidate, e.params)
 			}
 			gs.Candidates = append(gs.Candidates, cs)
 		}
 		for id, until := range g.disabled {
-			gs.Disabled = append(gs.Disabled, DisabledStatus{ID: id, Until: until})
+			gs.Disabled = append(gs.Disabled, DisabledStatus{HashKey: id, Until: until})
 		}
-		sort.Slice(gs.Disabled, func(i, j int) bool { return gs.Disabled[i].ID < gs.Disabled[j].ID })
+		sort.Slice(gs.Disabled, func(i, j int) bool { return gs.Disabled[i].HashKey < gs.Disabled[j].HashKey })
 		status.Groups = append(status.Groups, gs)
 	}
 

@@ -33,7 +33,7 @@ func TestCPUGroupMinesNextToTheGPU(t *testing.T) {
 	// one miner per group, both started in the first round
 	s.wantLaunches("kawpow", "ghostrider")
 	cpu := s.engine.groups[1].run
-	if cpu == nil || cpu.def.Name != "xmrig" || cpu.ID != "hashrate/xmrig/CPU#00/ghostrider" {
+	if cpu == nil || cpu.def.Name != "xmrig" || cpu.hashKey != "hashrate/xmrig/CPU#00/ghostrider" || cpu.ID != "hashrate/xmrig/CPU#00/ghostrider@fakepool" {
 		t.Fatalf("cpu run = %+v", cpu)
 	}
 
@@ -96,7 +96,7 @@ func TestStatusSnapshot(t *testing.T) {
 		s.advance(20 * time.Second)
 	}
 	cpu = s.engine.Status().Groups[1]
-	if len(cpu.Disabled) != 1 || cpu.Disabled[0].ID != "hashrate/xmrig/CPU#00/ghostrider" || cpu.State != "idle" {
+	if len(cpu.Disabled) != 1 || cpu.Disabled[0].HashKey != "hashrate/xmrig/CPU#00/ghostrider" || cpu.State != "idle" {
 		t.Errorf("cpu after failures = %+v", cpu)
 	}
 	if gpu = s.engine.Status().Groups[0]; gpu.State != "mining" {

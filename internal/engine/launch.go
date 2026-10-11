@@ -37,7 +37,9 @@ type LaunchSpec struct {
 	TLS        bool
 	// Threads limits a CPU miner, 0 lets the miner decide.
 	Threads int
-	DataDir string
+	// ExtraArgs are the user's additions to the miner's command line.
+	ExtraArgs []string
+	DataDir   string
 	// Tag tells the log files of several miners apart.
 	Tag string
 }
@@ -95,6 +97,7 @@ func Launch(ctx context.Context, spec LaunchSpec) (Miner, error) {
 	if err != nil {
 		return nil, err
 	}
+	args = append(args, spec.ExtraArgs...)
 
 	logPath := filepath.Join(spec.DataDir, "logs", fmt.Sprintf("%s-%s-%s-%s.log",
 		def.Name, spec.Algorithm.Name, spec.Tag, time.Now().Format("20060102-150405")))
