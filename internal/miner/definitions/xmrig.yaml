@@ -1,0 +1,46 @@
+# XMRig, an open source CPU miner: https://github.com/xmrig/xmrig
+name: xmrig
+version: 6.26.0
+api: xmrig
+vendor: CPU
+# XMRig cannot be set below a donation of 1%
+fee: 1.0
+
+downloads:
+  windows:
+    url: https://github.com/xmrig/xmrig/releases/download/v6.26.0/xmrig-6.26.0-windows-x64.zip
+    sha256: bba8097cb37d9b458a1cb1137876b27cde6740d17fe4ccbc086ba07d87d9e147
+    executable: xmrig.exe
+  linux:
+    url: https://github.com/xmrig/xmrig/releases/download/v6.26.0/xmrig-6.26.0-linux-static-x64.tar.gz
+    sha256: fc6f8ae5f64e4f17481f7e3be29a1c56949f216a998414188003eae1db20c9e5
+    executable: xmrig
+
+args:
+  - -a
+  - "{algo}"
+  - -o
+  - "{scheme}://{host}:{port}"
+  - -u
+  - "{user}"
+  - -p
+  - "{pass}"
+  - --http-host
+  - 127.0.0.1
+  - --http-port
+  - "{api_port}"
+  - --donate-level
+  - "1"
+  - --no-color
+
+# added when the number of threads is limited in the configuration
+threads_args:
+  - -t
+  - "{threads}"
+
+scheme: stratum+tcp
+scheme_tls: stratum+ssl
+
+algorithms:
+  - name: ghostrider
+    miner_name: gr

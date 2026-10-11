@@ -77,7 +77,7 @@ func Mine(ctx context.Context, cfg *config.Config, opts ManualOptions, out io.Wr
 	for _, d := range devices {
 		deviceIDs = append(deviceIDs, d.ID)
 		deviceIndexes = append(deviceIndexes, d.Index)
-		logf("using %s: %s (%d MiB)", d.ID, d.Model, d.MemoryMiB)
+		logf("using %s: %s", d.ID, d.Model)
 	}
 
 	zpool := &pool.Zpool{
@@ -196,7 +196,7 @@ func Mine(ctx context.Context, cfg *config.Config, opts ManualOptions, out io.Wr
 				sample.PowerWatts = gpuPower(ctx, deviceIndexes)
 			}
 			window.Add(sample)
-			current := sample.Algorithms[minerAlgo.NameForMiner()]
+			current := sample.For(minerAlgo.NameForMiner())
 			logf("%s  accepted %d  rejected %d  invalid %d  %.0f W  ~%.8f BTC/day",
 				FormatHashrate(current.Hashrate), current.Accepted, current.Rejected, current.Invalid,
 				sample.PowerWatts, current.Hashrate*offer.Price)
@@ -249,12 +249,15 @@ func selectDevices(ctx context.Context, def *miner.Definition, a miner.Algorithm
 	}
 	var usable []device.Device
 	for _, d := range all {
-		if d.Kind == device.GPU && d.Vendor == def.Vendor && d.MemoryMiB >= a.MinMemoryMiB {
+		switch {
+		case def.Vendor == miner.VendorCPU && d.Kind == device.CPU:
+			usable = append(usable, d)
+		case d.Kind == device.GPU && d.Vendor == def.Vendor && d.MemoryMiB >= a.MinMemoryMiB:
 			usable = append(usable, d)
 		}
 	}
 	if len(usable) == 0 {
-		return nil, fmt.Errorf("no %s GPU with at least %d MiB for %s", def.Vendor, a.MinMemoryMiB, a.Name)
+		return nil, fmt.Errorf("no %s device with at least %d MiB for %s", def.Vendor, a.MinMemoryMiB, a.Name)
 	}
 	return usable, nil
 }

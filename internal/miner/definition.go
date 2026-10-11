@@ -31,11 +31,13 @@ type Definition struct {
 	Vendor string  `yaml:"vendor"`
 	Fee    float64 `yaml:"fee"`
 	// Downloads is keyed by operating system (runtime.GOOS).
-	Downloads  map[string]Download `yaml:"downloads"`
-	Args       []string            `yaml:"args"`
-	Scheme     string              `yaml:"scheme"`
-	SchemeTLS  string              `yaml:"scheme_tls"`
-	Algorithms []Algorithm         `yaml:"algorithms"`
+	Downloads map[string]Download `yaml:"downloads"`
+	Args      []string            `yaml:"args"`
+	// ThreadsArgs are added when the number of threads is limited.
+	ThreadsArgs []string    `yaml:"threads_args"`
+	Scheme      string      `yaml:"scheme"`
+	SchemeTLS   string      `yaml:"scheme_tls"`
+	Algorithms  []Algorithm `yaml:"algorithms"`
 }
 
 type Download struct {
@@ -53,7 +55,15 @@ type Algorithm struct {
 	// Fee overrides the miner's developer fee, in percent.
 	Fee          *float64 `yaml:"fee"`
 	MinMemoryMiB int      `yaml:"min_memory_mib"`
+	// Args are added to the miner's arguments for this algorithm.
+	Args []string `yaml:"args"`
 }
+
+// Vendors a miner definition can be for.
+const (
+	VendorNVIDIA = "NVIDIA"
+	VendorCPU    = "CPU"
+)
 
 var (
 	nameRE   = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
@@ -118,8 +128,22 @@ func (d *Definition) validate() error {
 	if _, err := NewAPI(d.API); err != nil {
 		return fmt.Errorf("%s: %w", d.Name, err)
 	}
-	if len(d.Args) == 0 || d.Scheme == "" {
-		return fmt.Errorf("%s: args and scheme are required", d.Name)
+	if d.Vendor != VendorNVIDIA && d.Vendor != VendorCPU {
+		return fmt.Errorf("%s: vendor %q, use %s or %s", d.Name, d.Vendor, VendorNVIDIA, VendorCPU)
+	}
+	if len(d.Args) == 0 {
+		return fmt.Errorf("%s: args are required", d.Name)
+	}
+	// every placeholder must be known, and what it stands for defined
+	probe := Job{Threads: 1}
+	if _, err := d.BuildArgs(probe); err != nil {
+		return err
+	}
+	for _, a := range d.Algorithms {
+		probe.Algorithm = a
+		if _, err := d.BuildArgs(probe); err != nil {
+			return err
+		}
 	}
 	if len(d.Downloads) == 0 {
 		return fmt.Errorf("%s: no downloads", d.Name)
@@ -161,6 +185,13 @@ func (d *Definition) Algorithm(name string) (Algorithm, bool) {
 	return Algorithm{}, false
 }
 
+// SupportsTLS reports whether the miner can be started with a TLS
+// connection to the pool.
+func (d *Definition) SupportsTLS() bool {
+	_, err := d.BuildArgs(Job{TLS: true})
+	return err == nil
+}
+
 // NameForMiner returns the algorithm name as the miner program spells it.
 func (a Algorithm) NameForMiner() string {
 	if a.MinerName != "" {
@@ -188,18 +219,23 @@ type Job struct {
 	TLS           bool
 	User          string
 	Pass          string
+	// Threads limits a CPU miner, 0 lets the miner decide.
+	Threads int
 }
 
 var placeholderRE = regexp.MustCompile(`\{[a-z_]+\}`)
 
 // BuildArgs fills the placeholders of the argument template for job.
 func (d *Definition) BuildArgs(job Job) ([]string, error) {
-	scheme := d.Scheme
+	template := append([]string(nil), d.Args...)
+	template = append(template, job.Algorithm.Args...)
+	if job.Threads > 0 {
+		template = append(template, d.ThreadsArgs...)
+	}
+
+	scheme, tls := d.Scheme, "off"
 	if job.TLS {
-		if d.SchemeTLS == "" {
-			return nil, fmt.Errorf("%s has no TLS scheme", d.Name)
-		}
-		scheme = d.SchemeTLS
+		scheme, tls = d.SchemeTLS, "on"
 	}
 	indexes := make([]string, len(job.DeviceIndexes))
 	for i, index := range job.DeviceIndexes {
@@ -210,26 +246,31 @@ func (d *Definition) BuildArgs(job Job) ([]string, error) {
 		"{devices}":  strings.Join(indexes, ","),
 		"{algo}":     job.Algorithm.NameForMiner(),
 		"{scheme}":   scheme,
+		"{tls}":      tls,
 		"{host}":     job.Host,
 		"{port}":     strconv.Itoa(job.Port),
 		"{user}":     job.User,
 		"{pass}":     job.Pass,
+		"{threads}":  strconv.Itoa(job.Threads),
 	}
 
-	var unknown []string
-	args := make([]string, len(d.Args))
-	for i, arg := range d.Args {
+	var problems []string
+	args := make([]string, len(template))
+	for i, arg := range template {
 		// one pass, so a value that happens to contain braces is not expanded again
 		args[i] = placeholderRE.ReplaceAllStringFunc(arg, func(ph string) string {
 			v, ok := values[ph]
-			if !ok {
-				unknown = append(unknown, ph)
+			switch {
+			case !ok:
+				problems = append(problems, "unknown placeholder "+ph)
+			case ph == "{scheme}" && v == "":
+				problems = append(problems, "no scheme defined for this connection")
 			}
 			return v
 		})
 	}
-	if len(unknown) > 0 {
-		return nil, errors.New(d.Name + ": unknown placeholders " + strings.Join(unknown, ", "))
+	if len(problems) > 0 {
+		return nil, errors.New(d.Name + ": " + strings.Join(problems, ", "))
 	}
 	return args, nil
 }

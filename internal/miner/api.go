@@ -18,6 +18,15 @@ type Sample struct {
 	PowerWatts float64
 }
 
+// For returns the figures for an algorithm. Miners that mine one algorithm
+// and do not name it in their statistics report it under the empty name.
+func (s Sample) For(algorithm string) AlgoSample {
+	if a, ok := s.Algorithms[algorithm]; ok {
+		return a
+	}
+	return s.Algorithms[""]
+}
+
 type AlgoSample struct {
 	Hashrate float64 // hashes per second
 	Accepted int64
@@ -35,6 +44,11 @@ func NewAPI(kind string) (API, error) {
 	switch kind {
 	case "rigel":
 		return rigelAPI{}, nil
+	case "xmrig":
+		return xmrigAPI{path: "/2/summary"}, nil
+	case "wildrig":
+		// WildRig answers in XMRig's format, at the root of its API port
+		return xmrigAPI{path: "/"}, nil
 	}
 	return nil, fmt.Errorf("unknown miner api %q", kind)
 }
@@ -94,6 +108,46 @@ func (rigelAPI) Poll(ctx context.Context, port int) (Sample, error) {
 	return sample, nil
 }
 
+// xmrigAPI reads the summary document of XMRig and of miners that copied
+// its API.
+type xmrigAPI struct {
+	path string
+}
+
+type xmrigSummary struct {
+	Hashrate struct {
+		// averages over 10 seconds, 1 minute and 15 minutes; null until
+		// the miner has run that long
+		Total []*float64 `json:"total"`
+	} `json:"hashrate"`
+	Results struct {
+		SharesGood  float64 `json:"shares_good"`
+		SharesTotal float64 `json:"shares_total"`
+	} `json:"results"`
+}
+
+func (x xmrigAPI) Poll(ctx context.Context, port int) (Sample, error) {
+	var summary xmrigSummary
+	if err := getJSON(ctx, port, x.path, &summary); err != nil {
+		return Sample{}, err
+	}
+	var hashrate float64
+	for _, total := range summary.Hashrate.Total {
+		if total != nil && *total > 0 {
+			hashrate = *total
+			break
+		}
+	}
+	return Sample{
+		Time: time.Now(),
+		Algorithms: map[string]AlgoSample{"": {
+			Hashrate: hashrate,
+			Accepted: int64(summary.Results.SharesGood),
+			Rejected: int64(summary.Results.SharesTotal - summary.Results.SharesGood),
+		}},
+	}, nil
+}
+
 // Window collects the samples of one miner run.
 type Window struct {
 	samples []Sample
@@ -117,7 +171,7 @@ func (w *Window) Average(algorithm string, since time.Time) (hashrate, power flo
 		if !s.Time.After(since) {
 			continue
 		}
-		hashrate += s.Algorithms[algorithm].Hashrate
+		hashrate += s.For(algorithm).Hashrate
 		power += s.PowerWatts
 		n++
 	}

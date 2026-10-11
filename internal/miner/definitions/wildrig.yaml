@@ -1,0 +1,79 @@
+# WildRig Multi, a closed-source GPU miner for many smaller algorithms:
+# https://github.com/andru-kun/wildrig-multi
+name: wildrig
+version: 0.51.4
+api: wildrig
+vendor: NVIDIA
+# Developer fee in percent. The fees per algorithm below are the ones known
+# for certain; 1.0 for the rest is an assumption on the safe side.
+fee: 1.0
+
+downloads:
+  windows:
+    url: https://github.com/andru-kun/wildrig-multi/releases/download/0.51.4/wildrig-multi-windows-0.51.4.zip
+    sha256: 25b8cf133ee513a9b82d87bab7e277aff32d4472aac79c4ab3053d7653867c0d
+    executable: wildrig.exe
+  linux:
+    url: https://github.com/andru-kun/wildrig-multi/releases/download/0.51.4/wildrig-multi-linux-0.51.4.tar.gz
+    sha256: 7ccf91de99998cddc91001e22d91bf2489bdcc45d354a2e13f7e4f1b0bbc0405
+    executable: wildrig-multi
+
+args:
+  - --api-port
+  - "{api_port}"
+  - -a
+  - "{algo}"
+  - -o
+  - "{scheme}://{host}:{port}"
+  - -u
+  - "{user}"
+  - -p
+  - "{pass}"
+  # retries and pause between them, when the pool cannot be reached
+  - -r
+  - "4"
+  - -R
+  - "5"
+  # one instance per device group may run at the same time
+  - --multiple-instance
+  # count only NVIDIA cards, so that the device numbers match nvidia-smi
+  - --opencl-platforms
+  - nvidia
+  - --opencl-devices
+  - "{devices}"
+  - --opencl-threads
+  - auto
+
+scheme: stratum+tcp
+scheme_tls: stratum+tcps
+
+# Algorithms zpool.ca offers. The names are zpool's; miner_name is given
+# where WildRig calls the algorithm differently. min_memory_mib is a rough
+# lower bound for the algorithms that build a DAG.
+algorithms:
+  - name: anime
+  - name: bmw512
+  - name: curve
+    miner_name: curvehash
+  - name: evrprogpow
+    fee: 0.75
+    min_memory_mib: 6144
+  - name: firopow
+    fee: 0.75
+    min_memory_mib: 6144
+  - name: kawpow
+    fee: 0.75
+    min_memory_mib: 6144
+  - name: megabtx
+  - name: meowpow
+    fee: 0.75
+    min_memory_mib: 6144
+  - name: meraki
+    miner_name: progpow-telestai
+    fee: 0.75
+    min_memory_mib: 6144
+  - name: mike
+  - name: sha512256d
+  - name: skein2
+  - name: skydoge
+    fee: 2.0
