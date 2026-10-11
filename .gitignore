@@ -11,4 +11,6 @@
 
 # build output
 /rbm
+/rbm.new
 *.exe
+*.exe~

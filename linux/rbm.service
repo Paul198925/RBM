@@ -1,0 +1,25 @@
+# systemd service for rbm: starts mining when the machine boots and starts
+# it again if it stops with an error.
+#
+# Do not copy this file by hand: install-service.sh fills in the user and
+# the directory (the words in capitals) and puts it where systemd looks.
+[Unit]
+Description=rbm - mine with what pays best
+Documentation=http://127.0.0.1:4000/
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# an ordinary user, never root: rbm downloads and runs miner programs
+User=RBM_USER
+WorkingDirectory=RBM_DIR
+ExecStart=RBM_DIR/start.sh
+# rbm stops its miners when asked to stop; give it time for that
+KillSignal=SIGTERM
+TimeoutStopSec=45
+Restart=on-failure
+RestartSec=15
+
+[Install]
+WantedBy=multi-user.target
