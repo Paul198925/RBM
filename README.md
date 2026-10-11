@@ -9,11 +9,13 @@ It is written in Go, as one program without dependencies to install, for Windows
 ## What it does
 
 - **Benchmarks by mining.** A miner program is measured while it really mines, for three minutes by default. The figures are kept, so a restart does not measure again.
+- **Estimates to start from.** rbm comes with hashrates that were measured on other machines. For a card it has figures for, it mines by them at once instead of benchmarking everything first; what is mined is measured, and the measurement replaces the estimate. See [Shared hashrates](#shared-hashrates).
 - **Profit switching.** Each round (one minute by default) it compares what every measured combination would earn, less electricity if you set a price, and switches when another one earns enough more. Prices count as an hourly average, and a started miner is left alone for a while, so it does not chase every spike.
 - **Device groups.** Cards of the same model mine together with one miner program; different models choose for themselves. The CPU can mine too and is off by default.
 - **Watchdog.** A miner that exits or reports no hashrate is restarted. One that keeps failing is taken out for a while, and can be let back in from the interface.
 - **Memory guard.** A miner whose algorithm needs more memory than is free is not started. This keeps two miners from building a large DAG at the same time.
 - **Miner programs are downloaded for you**, and each download is checked against a known SHA-256 before it is unpacked.
+- **Updates.** rbm looks for newer releases and says so on the dashboard, where one click installs one. See [Updates](#updates).
 - **Web interface.** Dashboard, devices, pools and what they pay, balances and payouts, benchmarks, activity of the last days, watchdog, logs, and all settings.
 
 ## Pools
@@ -92,6 +94,7 @@ rbm [-config dir] <command>
   devices     list the GPUs and the CPU found on this machine
   pools       list what the enabled pools currently pay
   currencies  list the coins zpool.ca can pay out in
+  estimates   print what this machine has measured, to share it
   mine        run one miner on one algorithm, for testing
 ```
 
@@ -110,6 +113,23 @@ The configuration is a directory of YAML files, `config` by default. The web int
 | `devices.yaml` | which devices stay out of mining |
 
 `data/` holds the miner programs, their logs and the database with benchmarks and activity.
+
+### Shared hashrates
+
+Benchmarking every miner program on every algorithm takes hours. To skip most of that, rbm carries a list of hashrates measured on other machines, in [`internal/estimate/estimates.yaml`](internal/estimate/estimates.yaml): per card model, miner program and algorithm.
+
+Where the list has a figure for your card, rbm compares with it right away. An estimate is only that: the same card is faster or slower with another driver, clock or power limit. So whatever is actually mined is measured as before, and your own measurement takes the estimate's place. What the list does not cover is benchmarked as before. `use_estimates: false` under `switching` in `config.yaml` turns this off.
+
+The list is short so far: an RTX 3060 and an RTX 2080 SUPER. To add your cards, let rbm benchmark, run `rbm estimates`, and send what it prints as a pull request to that file. It prints card model, miner program, version, algorithm, hashrate and power draw, and nothing about you or your rig.
+
+### Updates
+
+A few times a day rbm asks GitHub whether there is a newer release, and shows it on the dashboard. **Update now** fetches the release, checks it against the SHA-256 GitHub lists for the file, stops the miners and restarts with the new version. That restart needs `start.bat`, `start.sh` or the systemd service; started any other way, the new version waits for the next start.
+
+Both can be changed under `updates` in `config.yaml` or on the Setup page:
+
+- `check: false` stops rbm from asking GitHub
+- `auto: true` installs a new release without asking. It is off by default: with it, rbm runs whatever gets published as a release of this project. The checksum guards against a broken download, not against a release that should not exist.
 
 ### The web interface from another machine
 

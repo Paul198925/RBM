@@ -4,7 +4,7 @@
 #
 # "rbm estimates" prints what your own machine has measured in this format.
 #
-# Measured on 2026-10-11 on Windows 11, cards at stock settings.
+# Measured on 2026-10-11 on Windows 11.
 estimates:
     - device: GeForce RTX 2080 SUPER
       miner: bzminer
