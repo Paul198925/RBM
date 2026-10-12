@@ -39,10 +39,9 @@ const (
 	// a miner without any hashrate for this long is stopped
 	watchdogTimeout = 5 * time.Minute
 	// this many failures within crashWindow take a candidate out
-	maxCrashes       = 3
-	crashWindow      = time.Hour
-	crashPenalty     = time.Hour
-	benchmarkPenalty = 6 * time.Hour
+	maxCrashes   = 3
+	crashWindow  = time.Hour
+	crashPenalty = time.Hour
 
 	stopGrace       = 10 * time.Second
 	sampleRetention = 7 * 24 * time.Hour
@@ -138,6 +137,9 @@ type Engine struct {
 
 	// the miner version each stored hashrate was measured with
 	versions map[string]string
+	// failures are the benchmarks that came to nothing, by hash key; nil
+	// until they are read from the store
+	failures map[string]failure
 
 	// what other goroutines may touch
 	mu         sync.Mutex
@@ -389,6 +391,8 @@ func (e *Engine) Enable(hashKey string) {
 				e.deps.Logf("%s: %s is enabled again", g.name, hashKey)
 			}
 		}
+		// asked for by hand: it starts over with a clean record
+		e.forgetFailure(hashKey)
 	})
 }
 
@@ -418,6 +422,9 @@ func (e *Engine) ResetWatchdog() {
 			g.disabled = map[string]time.Time{}
 			g.crashes = map[string][]time.Time{}
 			g.reasons = map[string]string{}
+		}
+		for hashKey := range e.failures {
+			e.forgetFailure(hashKey)
 		}
 		e.deps.Logf("watchdog was reset, %d entries cleared", n)
 	})
@@ -533,7 +540,7 @@ func (e *Engine) checkRun(g *group, now time.Time) {
 	case <-r.miner.Done():
 		e.deps.Logf("%s: %s exited on its own (%s)", g.name, r.label(), r.miner.ExitText())
 		e.stop(g, stats.EndCrashed, now)
-		e.failed(g, r.hashKey, now, false, "exited on its own: "+r.miner.ExitText())
+		e.failed(g, r.option, now, false, "exited on its own: "+r.miner.ExitText())
 		return
 	default:
 	}
@@ -547,7 +554,7 @@ func (e *Engine) checkRun(g *group, now time.Time) {
 	}
 	e.deps.Logf("%s: %s reported no hashrate for %v", g.name, r.label(), now.Sub(silentSince).Round(time.Second))
 	e.stop(g, stats.EndNoHashrate, now)
-	e.failed(g, r.hashKey, now, r.benchmark, fmt.Sprintf("reported no hashrate for %v", now.Sub(silentSince).Round(time.Second)))
+	e.failed(g, r.option, now, r.benchmark, fmt.Sprintf("reported no hashrate for %v", now.Sub(silentSince).Round(time.Second)))
 }
 
 // silenceLimit is how long a miner may go without reporting a hashrate.
@@ -560,30 +567,47 @@ func silenceLimit(a miner.Algorithm, hashed bool) time.Duration {
 	return watchdogTimeout
 }
 
-// failed counts a failure of a miner on an algorithm. A benchmark that
-// produced nothing takes it out at once, a miner that keeps failing after a
-// few tries.
-func (e *Engine) failed(g *group, hashKey string, now time.Time, benchmark bool, reason string) {
+// unmeasured reports whether this machine has no measurement of its own
+// for the option yet: a run of it is its benchmark, whatever it is called.
+func unmeasured(o option) bool { return !o.Benchmarked || o.estimated }
+
+// failed counts a failure of the miner and algorithm of o. A miner that
+// keeps failing is taken out after a few tries, a benchmark without any
+// hashrate (silent) at once. Where the failures mean that the benchmark
+// came to nothing, they are remembered and the waits grow, up to giving up.
+func (e *Engine) failed(g *group, o option, now time.Time, silent bool, reason string) {
+	hashKey := o.hashKey
 	g.reasons[hashKey] = reason
-	if benchmark {
-		g.disabled[hashKey] = now.Add(benchmarkPenalty)
-		e.deps.Logf("%s: benchmark of %s failed, not tried again for %v", g.name, hashKey, benchmarkPenalty)
-		return
-	}
-	recent := g.crashes[hashKey][:0]
-	for _, t := range g.crashes[hashKey] {
-		if now.Sub(t) < crashWindow {
-			recent = append(recent, t)
+	if !silent {
+		recent := g.crashes[hashKey][:0]
+		for _, t := range g.crashes[hashKey] {
+			if now.Sub(t) < crashWindow {
+				recent = append(recent, t)
+			}
+		}
+		recent = append(recent, now)
+		if len(recent) < maxCrashes {
+			g.crashes[hashKey] = recent
+			return
+		}
+		delete(g.crashes, hashKey)
+		// a miner that has run here before had a bad hour
+		if !unmeasured(o) {
+			g.disabled[hashKey] = now.Add(crashPenalty)
+			e.deps.Logf("%s: %s failed %d times within %v, not tried again for %v", g.name, hashKey, maxCrashes, crashWindow, crashPenalty)
+			return
 		}
 	}
-	recent = append(recent, now)
-	if len(recent) < maxCrashes {
-		g.crashes[hashKey] = recent
+
+	f := e.noteFailure(hashKey, o.def.Version, now, reason)
+	g.disabled[hashKey] = f.until()
+	if f.gaveUp() {
+		e.deps.Logf("%s: benchmark of %s failed %d times, giving up on it until %s has a new version or it is reset",
+			g.name, hashKey, f.Count, o.def.Name)
 		return
 	}
-	delete(g.crashes, hashKey)
-	g.disabled[hashKey] = now.Add(crashPenalty)
-	e.deps.Logf("%s: %s failed %d times within %v, not tried again for %v", g.name, hashKey, maxCrashes, crashWindow, crashPenalty)
+	e.deps.Logf("%s: benchmark of %s failed (%d of %d), not tried again for %v",
+		g.name, hashKey, f.Count, maxBenchmarkFailures, f.until().Sub(now).Round(time.Minute))
 }
 
 // allowed reports whether the user's settings permit the miner program on
@@ -631,6 +655,9 @@ func (e *Engine) estimate(g *group, def *miner.Definition, a miner.Algorithm) (e
 // options lists what group g could mine right now: every permitted miner on
 // every algorithm it supports, once per offer for that algorithm.
 func (e *Engine) options(g *group, now time.Time) ([]option, error) {
+	if err := e.loadFailures(); err != nil {
+		return nil, err
+	}
 	for id, until := range g.disabled {
 		if !now.Before(until) {
 			delete(g.disabled, id)
@@ -655,6 +682,7 @@ func (e *Engine) options(g *group, now time.Time) ([]option, error) {
 				continue
 			}
 			hashKey := stats.HashrateKey(def.Name, g.deviceIDs(), a.Name)
+			e.recallFailure(g, hashKey, def.Version, now)
 			if _, out := g.disabled[hashKey]; out {
 				continue
 			}
@@ -923,7 +951,7 @@ func (e *Engine) start(ctx context.Context, g *group, o option, decision selecto
 	if err != nil {
 		if ctx.Err() == nil {
 			e.deps.Logf("%s: could not start %s: %v", g.name, o.label(), err)
-			e.failed(g, o.hashKey, now, false, "could not be started: "+err.Error())
+			e.failed(g, o, now, false, "could not be started: "+err.Error())
 		}
 		return
 	}
@@ -1104,6 +1132,10 @@ func (e *Engine) store(now time.Time) error {
 			if err := e.noteVersion(r.hashKey, r.def.Version); err != nil {
 				return err
 			}
+		}
+		// measured to the end: whatever went wrong before is history
+		if st.Duration >= e.opts.BenchmarkTime {
+			e.forgetFailure(r.hashKey)
 		}
 		if outcome != stats.Accepted {
 			e.deps.Logf("%s: hashrate %s of %s was %s (stored average %s)",

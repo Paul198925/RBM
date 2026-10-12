@@ -92,6 +92,11 @@ type DisabledStatus struct {
 	Until   time.Time `json:"until"`
 	// Reason says how it failed the last time.
 	Reason string `json:"reason,omitempty"`
+	// Failures is how many of its benchmarks came to nothing, 0 for one
+	// that is out after crashes while mining. GaveUp says it is not tried
+	// again by itself; Until means nothing then.
+	Failures int  `json:"failures,omitempty"`
+	GaveUp   bool `json:"gave_up,omitempty"`
 }
 
 // Status returns the latest snapshot. It is safe to call from any goroutine.
@@ -163,7 +168,8 @@ func (e *Engine) publish(now time.Time) {
 			gs.Candidates = append(gs.Candidates, cs)
 		}
 		for id, until := range g.disabled {
-			gs.Disabled = append(gs.Disabled, DisabledStatus{HashKey: id, Until: until, Reason: g.reasons[id]})
+			f := e.failures[id]
+			gs.Disabled = append(gs.Disabled, DisabledStatus{HashKey: id, Until: until, Reason: g.reasons[id], Failures: f.Count, GaveUp: f.gaveUp()})
 		}
 		sort.Slice(gs.Disabled, func(i, j int) bool { return gs.Disabled[i].HashKey < gs.Disabled[j].HashKey })
 		status.Groups = append(status.Groups, gs)

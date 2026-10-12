@@ -183,7 +183,10 @@ func (f *fakeBackend) Benchmarks() []engine.BenchmarkStatus {
 	list[2].MeasuredVersion, list[2].RejectedPercent = "0.50.9", &some
 	list[3].MeasuredSeconds = 32
 	list[4].FailedUntil = &until
-	list[4].FailReason = "reported no hashrate for 5m0s"
+	list[4].FailReason, list[4].Failures = "reported no hashrate for 5m0s", 2
+	// one that was given up
+	list[5].Status, list[5].Failures = engine.BenchGaveUp, 3
+	list[5].FailReason = "exited on its own: exit code 1"
 	return list
 }
 func (f *fakeBackend) Log() []string { return []string{"12:00:00 started"} }

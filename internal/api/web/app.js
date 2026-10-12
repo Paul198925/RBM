@@ -592,7 +592,8 @@ const BENCH_STATUS = {
   'outdated': 'measured with an older version of the miner',
   'benchmarking': 'being measured right now',
   'pending': 'not measured yet',
-  'failed': 'taken out after failures',
+  'failed': 'its benchmark came to nothing; it is tried again after a wait that grows with every failure',
+  'gave up': 'its benchmark failed three times; it is not tried again until the miner program has a new version or you reset it',
   'no offer': 'the pool pays nothing for it at the moment, so it cannot be measured',
   'estimated': 'not measured here: the figure comes from another machine with the same card and is replaced once this is mined',
   'no fit': 'the card has too little memory for it',
@@ -603,7 +604,8 @@ function renderBenchmarks() {
   const all = state.benchmarks;
   const count = status => all.filter(b => b.status === status).length;
   // only what was measured or has failed can be measured again
-  const resettable = b => b.measured_seconds > 0 || b.status === 'failed';
+  const resettable = b => b.measured_seconds > 0 || b.status === 'failed' || b.status === 'gave up';
+  const failed = () => count('failed') + count('gave up');
   const measured = all.filter(resettable).length;
   const goal = state.status ? Math.round(state.status.benchmark_seconds) : 0;
 
@@ -616,9 +618,9 @@ function renderBenchmarks() {
       'Benchmark Updated Miners', 'primary', count('outdated'),
       () => resetBenchmarks({ which: 'outdated' }, 'Measure the ' + count('outdated') + ' benchmarks of updated miners again?')),
     action('Benchmark Failed Miners',
-      'Let the miners back in that were taken out after crashes or a benchmark without hashrate, and measure them again. Watch them: what failed once may fail again.',
-      'Benchmark Failed Miners', 'primary', count('failed'),
-      () => resetBenchmarks({ which: 'failed' }, 'Try the ' + count('failed') + ' failed benchmarks again?')),
+      'Let the miners back in whose benchmark came to nothing, also the ones that were given up after three failures, and measure them again with a clean record. Watch them: what failed once may fail again.',
+      'Benchmark Failed Miners', 'primary', failed(),
+      () => resetBenchmarks({ which: 'failed' }, 'Try the ' + failed() + ' failed benchmarks again?')),
     action('Reset All Benchmarks',
       'Forget everything that was measured. Do this after changing hardware, drivers or overclocking. Measuring everything again takes hours, and until then nothing is mined for profit.',
       'Benchmark All Miners', 'danger', measured,
@@ -627,7 +629,8 @@ function renderBenchmarks() {
   const statusText = b => {
     if (b.status === 'pending' && b.measured_seconds > 0) return 'pending  ' + Math.round(b.measured_seconds) + ' of ' + goal + ' s';
     if (b.status === 'benchmarking') return 'benchmarking  ' + Math.round(b.measured_seconds) + ' of ' + goal + ' s';
-    if (b.status === 'failed' && b.failed_until) return 'failed, again in ' + fmtUntil(b.failed_until);
+    if (b.status === 'failed' && b.failed_until) return 'failed' + (b.failures > 1 ? ' ' + b.failures + ' times' : '') + ', again in ' + fmtUntil(b.failed_until);
+    if (b.status === 'gave up') return 'gave up after ' + b.failures + ' failures';
     if (b.status === 'outdated') return 'outdated (v' + b.measured_version + ')';
     return b.status;
   };
@@ -785,16 +788,19 @@ function renderWatchdog() {
   if (!s) return h('div', { class: 'empty' }, 'Loading ...');
   const rows = [];
   for (const g of s.groups) {
-    for (const d of g.disabled || []) rows.push(Object.assign({ group: g.name, hash_key: d.hash_key, out: true, until: d.until, reason: d.reason }, parseKey(d.hash_key)));
+    for (const d of g.disabled || []) rows.push(Object.assign({ group: g.name, hash_key: d.hash_key, out: true, until: d.until, reason: d.reason, failures: d.failures || 0, gave_up: Boolean(d.gave_up) }, parseKey(d.hash_key)));
     for (const c of g.crashes || []) rows.push(Object.assign({ group: g.name, hash_key: c.hash_key, out: false, count: c.count, last: c.last }, parseKey(c.hash_key)));
   }
   const t = dataTable('watchdog', [
     { key: 'miner', label: 'Minername' },
     { key: 'algorithm', label: 'Algorithm' },
     { key: 'group', label: 'Device' },
-    { key: 'state', label: 'State', value: r => (r.out ? 'taken out' : 'counting'), filter: ['taken out', 'counting'],
+    { key: 'state', label: 'State', value: r => (r.gave_up ? 'gave up' : r.out ? 'taken out' : 'counting'), filter: ['taken out', 'gave up', 'counting'],
       cls: r => (r.reason ? 'wrap' : ''),
-      cell: r => (r.out ? [h('span', { class: 'badge failed' }, 'taken out, tried again in ' + fmtUntil(r.until)), r.reason ? h('div', { class: 'reason' }, r.reason) : null]
+      cell: r => (r.out ? [h('span', { class: 'badge ' + (r.gave_up ? 'gaveup' : 'failed') },
+        r.gave_up ? 'gave up after ' + r.failures + ' failed benchmarks'
+          : (r.failures ? 'benchmark failed' + (r.failures > 1 ? ' ' + r.failures + ' times' : '') : 'taken out') + ', tried again in ' + fmtUntil(r.until)),
+      r.reason ? h('div', { class: 'reason' }, r.reason) : null]
         : h('span', { class: 'badge todo' }, r.count + (r.count === 1 ? ' failure' : ' failures') + ' in the last hour')) },
     { key: 'last', label: 'Last', filter: false, value: r => (r.last ? new Date(r.last).getTime() : 0), cell: r => (r.last ? fmtAgo(r.last) + ' ago' : '') },
     { key: 'action', label: '', filter: false, value: () => '',
@@ -803,7 +809,7 @@ function renderWatchdog() {
   return h('div', {},
     h('div', { class: 'title' }, h('h1', {}, 'Watchdog Timers'),
       h('button', { class: 'primary', disabled: rows.length === 0, onclick: resetWatchdog }, 'Reset Watchdog')),
-    h('p', { class: 'lead' }, 'A miner that exits on its own or reports no hashrate for five minutes is restarted. After three failures within an hour it is taken out for an hour; a benchmark without any hashrate takes it out for six.'),
+    h('p', { class: 'lead' }, 'A miner that exits on its own or reports no hashrate for five minutes is restarted. One that has mined here before sits out an hour after three failures within an hour. A benchmark that comes to nothing is tried again after six hours, and after a second failure after a day. After the third failure it is given up: not tried again at all, until the miner program has a new version or you let it back in here. This is remembered across restarts.'),
     t.el);
 }
 

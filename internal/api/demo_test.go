@@ -33,8 +33,9 @@ func (d demoBackend) Status() engine.Status {
 				{ID: "hashrate/wildrig/GPU#00/kawpow@zpool:CLORE", HashKey: "hashrate/wildrig/GPU#00/kawpow", Miner: "wildrig", Algorithm: "kawpow", Pool: "zpool", Coin: "CLORE", Benchmarked: true, Hashrate: 18.2e6, Price: 1.1e-13, FeePercent: 0.75, Power: 175, RevenueBTC: 1.99e-6, ProfitBTC: -0.3e-6},
 				{ID: "hashrate/wildrig/GPU#00/skydoge@zpool", HashKey: "hashrate/wildrig/GPU#00/skydoge", Miner: "wildrig", Algorithm: "skydoge", Pool: "zpool", Price: 4.2e-9, FeePercent: 2},
 			},
-			Disabled: []engine.DisabledStatus{{HashKey: "hashrate/wildrig/GPU#00/firopow", Until: time.Now().Add(5*time.Hour + 12*time.Minute),
-				Reason: "exited on its own: exit code 3221225781 - a DLL the program needs is missing, usually the Microsoft Visual C++ Redistributable. Install it with: winget install Microsoft.VCRedist.2015+.x64"}},
+			Disabled: []engine.DisabledStatus{{HashKey: "hashrate/trex19/GPU#00/megamec", Until: time.Now().AddDate(100, 0, 0), Failures: 3, GaveUp: true, Reason: "exited on its own: exit code 1"},
+				{HashKey: "hashrate/wildrig/GPU#00/firopow", Until: time.Now().Add(5*time.Hour + 12*time.Minute), Failures: 2,
+					Reason: "exited on its own: exit code 3221225781 - a DLL the program needs is missing, usually the Microsoft Visual C++ Redistributable. Install it with: winget install Microsoft.VCRedist.2015+.x64"}},
 			Crashes: []engine.CrashStatus{{HashKey: "hashrate/srbminer/GPU#00/sha512256d", Count: 2, Last: time.Now().Add(-7 * time.Minute)}},
 		},
 		{

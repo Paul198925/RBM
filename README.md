@@ -12,7 +12,7 @@ It is written in Go, as one program without dependencies to install, for Windows
 - **Estimates to start from.** hashsteer comes with hashrates that were measured on other machines. For a card it has figures for, it mines by them at once instead of benchmarking everything first; what is mined is measured, and the measurement replaces the estimate. See [Shared hashrates](#shared-hashrates).
 - **Profit switching.** Each round (one minute by default) it compares what every measured combination would earn, less electricity if you set a price, and switches when another one earns enough more. Prices count as an hourly average, and a started miner is left alone for a while, so it does not chase every spike.
 - **Device groups.** Cards of the same model mine together with one miner program; different models choose for themselves. The CPU can mine too and is off by default.
-- **Watchdog.** A miner that exits or reports no hashrate is restarted. One that keeps failing is taken out for a while, and can be let back in from the interface.
+- **Watchdog.** A miner that exits or reports no hashrate is restarted. One that keeps failing is taken out for a while. A benchmark that comes to nothing is tried again after six hours and after a day; after the third failure it is given up until the miner program has a new version or you let it back in from the interface. This is remembered across restarts.
 - **Memory guard.** A miner whose algorithm needs more memory than is free is not started. This keeps two miners from building a large DAG at the same time.
 - **Miner programs are downloaded for you**, and each download is checked against a known SHA-256 before it is unpacked.
 - **Updates.** hashsteer looks for newer releases and says so on the dashboard, where one click installs one. See [Updates](#updates).
@@ -162,7 +162,7 @@ Built from documentation and tested only with made-up data so far:
 - mining single coins at zpool, and the balance it reports
 - everything on Linux: the program compiles and its tests pass there, but it has not mined on a Linux machine
 
-A miner program or algorithm that does not work fails its benchmark and is taken out for six hours; the rest goes on.
+A miner program or algorithm that does not work fails its benchmark, waits, and is given up after the third failure; the rest goes on.
 
 ## Build
 

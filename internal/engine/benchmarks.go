@@ -18,6 +18,7 @@ const (
 	BenchRunning  = "benchmarking" // being measured right now
 	BenchPending  = "pending"      // not measured yet, or not long enough
 	BenchFailed   = "failed"       // taken out after failures
+	BenchGaveUp   = "gave up"      // failed so often that it is not tried again by itself
 	BenchNoOffer  = "no offer"     // no pool pays for the algorithm, so it cannot be measured
 	BenchNoFit    = "no fit"       // the devices lack the memory for it
 	BenchExcluded = "excluded"     // switched off in the configuration
@@ -49,6 +50,8 @@ type BenchmarkStatus struct {
 	FailedUntil *time.Time `json:"failed_until,omitempty"`
 	// FailReason says how a failed one failed, and what may be missing.
 	FailReason string `json:"fail_reason,omitempty"`
+	// Failures is how many benchmarks of it came to nothing.
+	Failures int `json:"failures,omitempty"`
 	// Log is the newest log file of this combination. The engine leaves
 	// it empty.
 	Log string `json:"log,omitempty"`
@@ -126,10 +129,15 @@ func (e *Engine) listBenchmarks(now time.Time) error {
 					b.Status = BenchExcluded
 				case !e.fits(g, a):
 					b.Status = BenchNoFit
+				case failed && e.failures[hashKey].gaveUp():
+					b.Status = BenchGaveUp
+					b.FailReason = g.reasons[hashKey]
+					b.Failures = e.failures[hashKey].Count
 				case failed:
 					b.Status = BenchFailed
 					b.FailedUntil = &until
 					b.FailReason = g.reasons[hashKey]
+					b.Failures = e.failures[hashKey].Count
 				case g.run != nil && g.run.hashKey == hashKey && g.run.benchmark:
 					b.Status = BenchRunning
 				case done && e.versions[hashKey] != "" && e.versions[hashKey] != def.Version:
@@ -199,9 +207,9 @@ func (e *Engine) ResetBenchmarks(which string, hashKeys []string) {
 			keys = nil
 			for _, b := range e.Benchmarks() {
 				switch {
-				case which == ResetFailed && b.Status == BenchFailed,
+				case which == ResetFailed && (b.Status == BenchFailed || b.Status == BenchGaveUp),
 					which == ResetOutdated && b.Status == BenchOutdated,
-					which == ResetAll && (b.MeasuredSeconds > 0 || b.Status == BenchFailed):
+					which == ResetAll && (b.MeasuredSeconds > 0 || b.Status == BenchFailed || b.Status == BenchGaveUp):
 					keys = append(keys, b.HashKey)
 				}
 			}
@@ -218,6 +226,7 @@ func (e *Engine) ResetBenchmarks(which string, hashKeys []string) {
 				return
 			}
 			delete(e.versions, key)
+			e.forgetFailure(key)
 			for _, g := range e.groups {
 				delete(g.disabled, key)
 				delete(g.crashes, key)

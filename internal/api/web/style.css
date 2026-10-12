@@ -81,6 +81,7 @@ td.check, th.check { width: 28px; padding-right: 0; }
 .badge.outdated, .badge.pending { background: rgba(230, 178, 60, .14); color: var(--warn); }
 .badge.failed { background: rgba(239, 100, 97, .14); color: var(--bad); }
 .badge.nooffer, .badge.nofit, .badge.excluded { background: var(--panel-2); color: var(--muted); }
+.badge.gaveup { background: rgba(239, 100, 97, .28); color: var(--bad); font-weight: 600; }
 .badge.estimated { background: rgba(77, 163, 255, .12); color: var(--accent); }
 td.hot { color: var(--bad); font-weight: 600; }
 td.warm { color: var(--warn); }
