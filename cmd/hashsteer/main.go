@@ -7,6 +7,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 	"text/tabwriter"
 
 	"hashsteer/internal/config"
+	"hashsteer/internal/console"
 	"hashsteer/internal/device"
 	"hashsteer/internal/pool"
 	"hashsteer/internal/rates"
@@ -27,6 +29,9 @@ commands:
               benchmarks first, then switches as the prices move.
               Everything can be watched and configured in the web
               interface, by default at http://127.0.0.1:4000/
+                -plain        write a log line by line instead of drawing
+                              the dashboard; this is what happens anyway
+                              when the output is not a terminal
   devices     list the GPUs and the CPU found on this machine
   pools       list what the enabled pools currently pay, per algorithm and coin
   currencies  list the coins zpool.ca can pay the earnings out in
@@ -94,11 +99,17 @@ func run() error {
 		if err := prepareConfig(*configDir); err != nil {
 			return err
 		}
-		app, err := runner.NewApp(ctx, *configDir, os.Stdout)
-		if err != nil {
-			return err
+		flags := flag.NewFlagSet("run", flag.ExitOnError)
+		plain := flags.Bool("plain", false, "write a log instead of drawing the dashboard")
+		flags.Parse(args)
+		if *plain || !console.Usable(os.Stdout) {
+			app, err := runner.NewApp(ctx, *configDir, os.Stdout)
+			if err != nil {
+				return err
+			}
+			return app.Run(ctx)
 		}
-		return app.Run(ctx)
+		return runWithDashboard(ctx, *configDir)
 	case "mine":
 		flags := flag.NewFlagSet("mine", flag.ExitOnError)
 		opts := runner.ManualOptions{}
@@ -114,6 +125,47 @@ func run() error {
 	}
 	flag.Usage()
 	return fmt.Errorf("unknown command %q", command)
+}
+
+// logTail is how many of the last log lines are left in the window when the
+// dashboard is gone.
+const logTail = 25
+
+// runWithDashboard mines and shows it in a dashboard that is redrawn in
+// place. The log goes into the dashboard instead of scrolling by.
+func runWithDashboard(ctx context.Context, configDir string) error {
+	app, err := runner.NewApp(ctx, configDir, io.Discard)
+	if err != nil {
+		return err
+	}
+	ctx, quit := context.WithCancel(ctx)
+	defer quit()
+	// the dashboard stays until the miners are stopped, so that the way
+	// down can be watched
+	drawing, wipe := context.WithCancel(context.Background())
+	defer wipe()
+
+	dashboard := console.New(app, runner.Version, os.Stdout, os.Stdin)
+	dashboard.Worker = func() string { return app.Config().General.Worker }
+	dashboard.URL = app.URL
+	gone := make(chan struct{})
+	go func() {
+		defer close(gone)
+		dashboard.Run(drawing, quit)
+	}()
+
+	err = app.Run(ctx)
+	wipe()
+	<-gone
+	// the dashboard took its screen with it: leave the end of the log
+	log := app.Log()
+	if len(log) > logTail {
+		log = log[len(log)-logTail:]
+	}
+	for _, line := range log {
+		fmt.Println(line)
+	}
+	return err
 }
 
 // prepareConfig makes sure the configuration directory exists: converted

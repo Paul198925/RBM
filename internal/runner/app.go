@@ -69,11 +69,13 @@ type App struct {
 	// what coins cost, for the pools that pay in the mined coin
 	coinPrices rates.CoinGecko
 
-	mu           sync.Mutex
-	cfg          *config.Config
-	engine       *engine.Engine
-	store        *stats.Store
-	waiting      string
+	mu      sync.Mutex
+	cfg     *config.Config
+	engine  *engine.Engine
+	store   *stats.Store
+	waiting string
+	// url is where the web interface answers, empty if it is turned off
+	url          string
 	paused       bool
 	log          []string
 	currencies   []pool.PayoutCurrency
@@ -143,7 +145,11 @@ func (a *App) Run(ctx context.Context) error {
 			return fmt.Errorf("web interface: %w", err)
 		}
 		defer server.Close()
-		a.logf("web interface: http://%s/", server.Addr())
+		url := fmt.Sprintf("http://%s/", server.Addr())
+		a.mu.Lock()
+		a.url = url
+		a.mu.Unlock()
+		a.logf("web interface: %s", url)
 	}
 
 	watchCtx, stopWatching := context.WithCancel(ctx)
@@ -529,6 +535,14 @@ func (a *App) isPaused() bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.paused
+}
+
+// URL is the address of the web interface, empty if it is turned off or not
+// started yet.
+func (a *App) URL() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.url
 }
 
 // The methods below are api.Backend.
