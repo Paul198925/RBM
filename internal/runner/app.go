@@ -318,7 +318,7 @@ func (a *App) coinPools(cfg *config.Config) []pool.CoinPool {
 			Wallets:      cfg.Pools.Wallets,
 			Worker:       cfg.General.Worker,
 			Region:       c.Region,
-			ExcludeCoins: c.ExcludeCoins,
+			ExcludeCoins: slices.Concat(c.ExcludeCoins, cfg.Pools.ExcludeCoins),
 			Prices:       a.coinPrices.InBTC,
 		})
 		if p != nil {
@@ -580,7 +580,7 @@ func (a *App) build(ctx context.Context, cfg *config.Config, store *stats.Store)
 			AlgoSwitching: z.AlgoSwitching,
 			CoinMining:    z.CoinMining,
 			Coins:         z.Coins,
-			ExcludeCoins:  z.ExcludeCoins,
+			ExcludeCoins:  slices.Concat(z.ExcludeCoins, cfg.Pools.ExcludeCoins),
 		}
 		if err := checkPayoutCurrency(ctx, zpool, a.logf); err != nil {
 			if ctx.Err() != nil {
@@ -795,6 +795,7 @@ func (a *App) Config() config.Config {
 
 func cloneConfig(c *config.Config) config.Config {
 	out := *c
+	out.Pools.ExcludeCoins = slices.Clone(c.Pools.ExcludeCoins)
 	out.Pools.Zpool.Coins = slices.Clone(c.Pools.Zpool.Coins)
 	out.Pools.Zpool.ExcludeCoins = slices.Clone(c.Pools.Zpool.ExcludeCoins)
 	for _, name := range config.CoinPoolNames {

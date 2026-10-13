@@ -198,7 +198,7 @@ const PAGES = {
   '': 'dashboard', console: 'console', devices: 'devices',
   bestpools: 'bestpools', allpools: 'allpools', earnings: 'earnings', totals: 'totals', payouts: 'payouts',
   miners: 'miners', benchmarks: 'benchmarks', activity: 'activity', shared: 'shared', watchdog: 'watchdog',
-  setup: 'setup', setupwallets: 'setupwallets', setuppools: 'setuppools', setupminers: 'setupminers', setupalgorithms: 'setupalgorithms', setupdevices: 'setupdevices',
+  setup: 'setup', setupwallets: 'setupwallets', setupcoins: 'setupcoins', setuppools: 'setuppools', setupminers: 'setupminers', setupalgorithms: 'setupalgorithms', setupdevices: 'setupdevices',
   // names of earlier versions
   pools: 'allpools', config: 'setup', logs: 'console',
 };
@@ -905,6 +905,7 @@ function toggleList(items, path, text) {
 const SETUP = {
   setup: ['Setup', 'config.yaml', setupGeneral],
   setupwallets: ['Setup Wallets', 'pools.yaml', setupWallets],
+  setupcoins: ['Setup Coins', 'pools.yaml', setupCoins],
   setuppools: ['Setup Pools', 'pools.yaml', setupPools],
   setupminers: ['Setup Miners', 'miners.yaml', setupMiners],
   setupalgorithms: ['Setup Algorithms', 'algorithms.yaml', setupAlgorithms],
@@ -923,7 +924,7 @@ function renderSetup() {
       + (changed ? ' There are unsaved changes.' : '')));
   return h('div', {}, h('h1', {}, title),
     h('p', { class: 'lead' }, 'File: ', h('code', {}, file)),
-    h('div', { class: 'form' }, body()), savebar);
+    h('div', { class: 'form' + (state.page === 'setupcoins' ? ' wide' : '') }, body()), savebar);
 }
 
 function setupGeneral() {
@@ -1044,6 +1045,92 @@ function zpoolWalletField() {
   return field('Wallet', 'zpool pays to the wallet of its payout coin. Wallets are set under Setup Wallets.',
     address ? h('code', {}, address)
       : h('span', { class: 'error' }, 'There is no ' + pools.zpool.currency + ' wallet yet. ', h('a', { href: '#/setupwallets' }, 'Add one')));
+}
+
+// setupCoins lists every coin that could be mined as a single coin, with
+// what stands in its way, and one switch per coin that holds for all pools.
+function setupCoins() {
+  const pools = state.draft.pools;
+  const mined = minedAlgorithms();
+  const coins = new Map();
+  const coin = symbol => {
+    if (!coins.has(symbol)) coins.set(symbol, { symbol, name: '', algorithms: new Set(), pools: [] });
+    return coins.get(symbol);
+  };
+  for (const pool of state.meta.coin_pools) {
+    for (const c of pool.coins) {
+      const entry = coin(c.symbol);
+      entry.name = entry.name || c.name;
+      entry.algorithms.add(c.algorithm);
+      const settings = pools[pool.key];
+      entry.pools.push({ title: pool.title, usable: settings.enabled && !settings.exclude_coins.includes(c.symbol),
+        why: !settings.enabled ? 'pool is off' : settings.exclude_coins.includes(c.symbol) ? 'unchecked at the pool' : '' });
+    }
+  }
+  // what zpool mines as single coins, as far as it is known here
+  const atZpool = new Set(pools.zpool.coins);
+  for (const symbol of pools.zpool.coins) coin(symbol);
+  for (const g of (state.status ? state.status.groups : [])) {
+    for (const c of g.candidates || []) {
+      if (c.pool === 'zpool' && c.coin) { coin(c.coin).algorithms.add(c.algorithm); atZpool.add(c.coin); }
+    }
+  }
+  for (const entry of coins.values()) {
+    const viaZpool = pools.zpool.coin_mining && (!pools.zpool.coins.length || pools.zpool.coins.includes(entry.symbol));
+    if (viaZpool && atZpool.has(entry.symbol)) {
+      entry.pools.push({ title: 'zpool', usable: pools.zpool.enabled && !pools.zpool.exclude_coins.includes(entry.symbol),
+        why: !pools.zpool.enabled ? 'pool is off' : pools.zpool.exclude_coins.includes(entry.symbol) ? 'excluded at the pool' : '', zpool: true });
+    }
+  }
+  // what each coin would earn right now, at best
+  const best = new Map();
+  for (const g of (state.status ? state.status.groups : [])) {
+    for (const c of g.candidates || []) {
+      if (!c.coin) continue;
+      const have = best.get(c.coin);
+      if (!have || c.profit_btc_per_day > have.profit) best.set(c.coin, { profit: c.profit_btc_per_day, group: g.name, pool: c.pool, measured: c.benchmarked });
+    }
+  }
+
+  const rows = Array.from(coins.values()).sort((a, b) => a.symbol.localeCompare(b.symbol));
+  const line = entry => {
+    const off = pools.exclude_coins.includes(entry.symbol);
+    const usable = entry.pools.filter(p => p.usable);
+    // a coin pool pays to the coin's own wallet, zpool to the wallet of its payout coin
+    const needsWallet = usable.some(p => !p.zpool);
+    const algorithms = Array.from(entry.algorithms);
+    const problems = [];
+    if (!usable.length) problems.push(entry.pools.length ? 'no pool: ' + entry.pools.map(p => p.title + ' ' + (p.why || 'is usable')).join(', ') : 'no pool offers it');
+    if (needsWallet && !pools.wallets[entry.symbol] && !usable.some(p => p.zpool)) problems.push('no wallet');
+    if (algorithms.length && !algorithms.some(a => mined.has(a))) problems.push('no miner program for ' + algorithms.join(', '));
+    const b = best.get(entry.symbol);
+    const state_ = off ? 'switched off here' : problems.length ? problems.join('; ') : b ? 'ready' : 'ready, no offer right now';
+    return h('tr', { class: off || problems.length ? 'off' : '' },
+      h('td', {}, h('input', { type: 'checkbox', checked: !off, title: 'Mine ' + entry.symbol, onchange: e => {
+        const next = state.draft.pools.exclude_coins.filter(x => x !== entry.symbol);
+        if (!e.target.checked) next.push(entry.symbol);
+        state.draft.pools.exclude_coins = next.sort();
+        render();
+      } })),
+      h('td', { class: 'sym' }, entry.symbol),
+      h('td', {}, entry.name),
+      h('td', {}, algorithms.join(', ')),
+      h('td', {}, pools.wallets[entry.symbol] ? 'set' : usable.length && !needsWallet ? 'not needed' : h('a', { href: '#/setupwallets' }, 'none')),
+      h('td', {}, entry.pools.map(p => p.title + (p.usable ? '' : ' (' + p.why + ')')).join(', ') || '-'),
+      h('td', {}, b && !off && b.profit > 0 ? (fiat(b.profit) || (b.profit * 1e8).toFixed(0) + ' sat') + '/day on ' + b.group + ' at ' + b.pool + (b.measured ? '' : ' (not measured yet)') : '-'),
+      h('td', { class: 'note' }, state_));
+  };
+  // coins that are switched off but that no pool lists any more stay visible, so they can be switched on again
+  const strays = pools.exclude_coins.filter(s => !coins.has(s));
+  return h('div', { class: 'section wide' }, h('h3', {}, 'Coins'),
+    h('p', { class: 'help' }, 'Every coin that can be mined as a single coin, and what it takes: a pool that offers it and is switched on, a wallet where the pool pays in the coin itself, and a miner program for its algorithm. An unchecked coin is mined at no pool, whatever the lists under Setup Pools say. "Best now" is what the coin would earn at the moment with the saved settings; it is empty until hashsteer mines.'),
+    rows.length ? h('table', { class: 'coins' },
+      h('thead', {}, h('tr', {}, h('th', {}, 'Mine'), h('th', {}, 'Coin'), h('th', {}, 'Name'), h('th', {}, 'Algorithm'), h('th', {}, 'Wallet'), h('th', {}, 'Pools'), h('th', {}, 'Best now'), h('th', {}, 'State'))),
+      h('tbody', {}, rows.map(line))) : h('div', { class: 'empty' }, 'No coin is known yet.'),
+    strays.length ? listField('Also switched off', 'pools.exclude_coins', 'Coins that are switched off and that no pool here lists right now. Symbols separated by commas.') : null,
+    h('p', { class: 'help' }, pools.zpool.enabled && pools.zpool.algo_switching
+      ? 'zpool also has one port per algorithm where the pool itself picks the coin ("pool picks" in the lists). That is not touched by this page: which coin is mined there cannot be chosen.'
+      : ''));
 }
 
 // setupCoinPool is the section of a pool that pays in the mined coin.
@@ -1187,7 +1274,7 @@ const VIEWS = {
   dashboard: renderDashboard, console: renderConsole, devices: renderDevices,
   bestpools: renderBestPools, allpools: renderAllPools, earnings: renderEarnings, totals: renderTotals, payouts: renderPayouts,
   miners: renderMiners, benchmarks: renderBenchmarks, activity: renderActivity, shared: renderShared, watchdog: renderWatchdog,
-  setup: renderSetup, setupwallets: renderSetup, setuppools: renderSetup, setupminers: renderSetup, setupalgorithms: renderSetup, setupdevices: renderSetup,
+  setup: renderSetup, setupwallets: renderSetup, setupcoins: renderSetup, setuppools: renderSetup, setupminers: renderSetup, setupalgorithms: renderSetup, setupdevices: renderSetup,
 };
 
 // what each page needs besides the status

@@ -26,7 +26,7 @@ It is written in Go, as one program without dependencies to install, for Windows
 | [2Miners](https://2miners.com) | the coin that is mined | ERG, ETC, ETHW, NEXA, RVN, XNA |
 | [WoolyPooly](https://woolypooly.com) | the coin that is mined | ERG, ETC, ETHW, FIRO, MEWC, NEXA, RVN, RXD, XNA |
 
-Wallets are kept in one list, one address per coin, and every pool uses the ones it can. 2Miners and WoolyPooly mine the coins that have a wallet; zpool pays to the wallet of its payout coin. The dashboard also shows what has arrived at each wallet: for BTC, DOGE, ERG, ETC, FIRO, LTC, MEWC, RVN and XNA the address is looked up every ten minutes at a public block explorer of the coin. That can be switched off under **Setup Wallets**.
+Wallets are kept in one list, one address per coin, and every pool uses the ones it can. 2Miners and WoolyPooly mine the coins that have a wallet; zpool pays to the wallet of its payout coin. **Setup Coins** lists every coin that can be mined as a single coin with what it still needs (a pool, a wallet, a miner program) and what it would earn right now, and has one switch per coin that holds for all pools. The dashboard also shows what has arrived at each wallet: for BTC, DOGE, ERG, ETC, FIRO, LTC, MEWC, RVN and XNA the address is looked up every ten minutes at a public block explorer of the coin. That can be switched off under **Setup Wallets**.
 
 zpool reports what it pays itself. For the other two the figure is worked out from the coin's price (from CoinGecko), its block reward and the hashrate of its network, less the pool's fee. That is an expectation; what arrives depends on the pool's luck.
 

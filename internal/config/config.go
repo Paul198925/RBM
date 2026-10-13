@@ -140,10 +140,14 @@ type Pools struct {
 	Wallets Wallets `yaml:"wallets" json:"wallets"`
 	// NoWalletBalances keeps the wallet addresses to the pools: no block
 	// explorer is asked what has arrived at them.
-	NoWalletBalances bool     `yaml:"no_wallet_balances" json:"no_wallet_balances"`
-	Zpool            Zpool    `yaml:"zpool" json:"zpool"`
-	TwoMiners        CoinPool `yaml:"2miners" json:"twominers"`
-	WoolyPooly       CoinPool `yaml:"woolypooly" json:"woolypooly"`
+	NoWalletBalances bool `yaml:"no_wallet_balances" json:"no_wallet_balances"`
+	// ExcludeCoins are mined at no pool, whatever the pools' own lists
+	// say. It cannot reach into zpool's ports for an algorithm, where the
+	// pool picks the coin.
+	ExcludeCoins []string `yaml:"exclude_coins" json:"exclude_coins"`
+	Zpool        Zpool    `yaml:"zpool" json:"zpool"`
+	TwoMiners    CoinPool `yaml:"2miners" json:"twominers"`
+	WoolyPooly   CoinPool `yaml:"woolypooly" json:"woolypooly"`
 }
 
 // Wallets maps coin symbols like "RVN" to payout addresses.
@@ -302,7 +306,8 @@ func Default() *Config {
 			Sharing: Sharing{URL: DefaultShareURL, Download: true},
 		},
 		Pools: Pools{
-			Wallets: Wallets{},
+			Wallets:      Wallets{},
+			ExcludeCoins: []string{},
 			Zpool: Zpool{
 				Enabled:       true,
 				Currency:      "BTC",
@@ -380,6 +385,9 @@ func (c *Config) Validate() error {
 		return errors.New("zpool wallet: this does not look like an address")
 	}
 	var err error
+	if c.Pools.ExcludeCoins, err = symbols(c.Pools.ExcludeCoins, coinRE, "excluded coin"); err != nil {
+		return err
+	}
 	if z.Coins, err = symbols(z.Coins, coinRE, "zpool coin"); err != nil {
 		return err
 	}

@@ -176,6 +176,7 @@ input:focus, select:focus { outline: none; border-color: var(--accent); }
 .tabs button.active { border-bottom-color: var(--accent); color: #fff; }
 
 .form { max-width: 780px; }
+.form.wide { max-width: 1180px; }
 .field { display: grid; grid-template-columns: 230px 1fr; gap: 4px 18px; padding: 10px 0; border-bottom: 1px solid var(--line); }
 .field > label { padding-top: 6px; font-weight: 600; }
 .field .control input[type=text], .field .control input[type=number], .field .control input[type=password], .field .control select { width: 100%; max-width: 420px; }
@@ -243,6 +244,11 @@ table.wallets { width: 100%; margin: 8px 0; }
 table.wallets td { padding: 4px 8px 4px 0; border: 0; background: none; }
 table.wallets th { padding: 2px 8px 2px 0; background: none; border: 0; }
 table.wallets input.wide { width: 100%; min-width: 260px; font-family: var(--mono); }
+table.coins { width: 100%; margin: 8px 0; }
+table.coins td, table.coins th { padding: 5px 12px 5px 0; border: 0; background: none; vertical-align: top; text-align: left; }
+table.coins td.note { color: var(--muted); font-size: 13px; white-space: normal; min-width: 220px; }
+table.coins tr.off td { color: var(--muted); }
+table.coins td.sym { font-weight: 600; white-space: nowrap; }
 table.wallets td.users { color: var(--muted); font-size: 13px; white-space: nowrap; }
 .field .error { color: var(--bad); }
 .section .go { padding-top: 6px; }
