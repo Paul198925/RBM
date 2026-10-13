@@ -38,7 +38,7 @@ func TestWalletBalancesAreAskedFor(t *testing.T) {
 
 	// a coin without a known explorer is left out; the others are asked
 	// once, in the order of their names
-	app.cfg.Pools.Wallets = map[string]string{"RVN": " RWallet1 ", "BTC": "bc1wallet", "NEXA": "nexa:wallet", "LTC": ""}
+	app.cfg.Pools.Wallets = map[string]string{"RVN": " RWallet1 ", "BTC": "bc1wallet", "XMR": "44wallet", "LTC": ""}
 	app.readWallets(ctx)
 	app.readWallets(ctx)
 	if got := strings.Join(asked, " "); got != "BTC:bc1wallet RVN:RWallet1" {

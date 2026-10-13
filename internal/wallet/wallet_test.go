@@ -99,10 +99,10 @@ func TestBalanceThatCannotBeRead(t *testing.T) {
 
 func TestSupported(t *testing.T) {
 	coins := Supported()
-	if strings.Join(coins, " ") != "BTC DOGE ERG ETC FIRO LTC MEWC RVN XNA" {
+	if strings.Join(coins, " ") != "BTC DOGE ERG ETC ETHW FIRO LTC MEWC NEXA RVN RXD XNA" {
 		t.Errorf("supported: %v", coins)
 	}
-	if !Known("rvn") || Known("NEXA") {
+	if !Known("rvn") || !Known("NEXA") || Known("XMR") {
 		t.Error("Known is off")
 	}
 }
@@ -114,6 +114,11 @@ func TestLive(t *testing.T) {
 		t.Skip("set HASHSTEER_WALLET_LIVE=1 to ask the real explorers")
 	}
 	r := &Reader{}
+	addresses := map[string]string{}
+	// no NEXA address is well known enough to stand here: name one
+	if nexa := os.Getenv("HASHSTEER_WALLET_LIVE_NEXA"); nexa != "" {
+		addresses["NEXA"] = nexa
+	}
 	for coin, address := range map[string]string{
 		"BTC":  "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
 		"LTC":  "LQTpS3VaYTjCr4s9Y1t5zbeY26zevf7Fb3",
@@ -123,7 +128,12 @@ func TestLive(t *testing.T) {
 		"ETC":  "0x000000000000000000000000000000000000dEaD",
 		"ERG":  "9hY16vzHmmfyVBwKeFGHvb2bMFsG94A1u7To1QWtUokACyFVENQ",
 		"FIRO": "aEF2p3jepoWF2yRYZjb6EACCP4CaP41doV",
+		"ETHW": "0x000000000000000000000000000000000000dEaD",
+		"RXD":  "1BitcoinEaterAddressDontSendf59kuE",
 	} {
+		addresses[coin] = address
+	}
+	for coin, address := range addresses {
 		b, err := r.Balance(context.Background(), coin, address)
 		if err != nil {
 			t.Errorf("%s: %v", coin, err)

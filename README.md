@@ -29,7 +29,7 @@ It is written in Go, as one program without dependencies to install, for Windows
 | [WoolyPooly](https://woolypooly.com) | the coin that is mined | ERG, ETC, ETHW, FIRO, MEWC, NEXA, OCTA, RTM (CPU), RVN, RXD, VTC, XNA |
 | [MoneroOcean](https://moneroocean.stream) | Monero | XMR with the CPU, or whatever the pool switches to |
 
-Wallets are kept in one list, one address per coin, and every pool uses the ones it can. 2Miners and WoolyPooly mine the coins that have a wallet, MoneroOcean needs the one for XMR; zpool pays to the wallet of its payout coin. **Setup Coins** lists every coin that can be mined as a single coin with what it still needs (a pool, a wallet, a miner program) and what it would earn right now, and has one switch per coin that holds for all pools. The dashboard also shows what has arrived at each wallet: for BTC, DOGE, ERG, ETC, FIRO, LTC, MEWC, RVN and XNA the address is looked up every ten minutes at a public block explorer of the coin. That can be switched off under **Setup Wallets**.
+Wallets are kept in one list, one address per coin, and every pool uses the ones it can. 2Miners and WoolyPooly mine the coins that have a wallet, MoneroOcean needs the one for XMR; zpool pays to the wallet of its payout coin. **Setup Coins** lists every coin that can be mined as a single coin with what it still needs (a pool, a wallet, a miner program) and what it would earn right now, and has one switch per coin that holds for all pools. The dashboard also shows what has arrived at each wallet: for BTC, DOGE, ERG, ETC, ETHW, FIRO, LTC, MEWC, NEXA, RVN, RXD and XNA the address is looked up every ten minutes at a public block explorer of the coin, or where there is none at a public node or Electrum server of its network. That can be switched off under **Setup Wallets**.
 
 MoneroOcean can be mined in two ways, and hashsteer measures both and takes the better. The ordinary XMRig mines Monero. The pool's own build of XMRig measures the CPU on every algorithm the pool has a coin for, tells the pool, and is then handed whatever pays best; the pool switches by itself. Its hashrate is shown in hashes of Monero's algorithm that earn the same, since a hash means something else on every algorithm.
 
@@ -217,7 +217,7 @@ Built from documentation and tested only with made-up data, or against the real 
 - the other miner programs, and most algorithms of the ones above
 - 2Miners, WoolyPooly and MoneroOcean: what they pay is read from the real pools, but nothing was mined there
 - mining single coins at zpool
-- the wallet balances: eight of the nine block explorers were asked for real, with public addresses
+- the wallet balances: eleven of the twelve sources were asked for real, with public addresses
 - everything on Linux: the program compiles and its tests pass there, but it has not mined on a Linux machine
 
 A miner program or algorithm that does not work fails its benchmark, waits, and is given up after the third failure; the rest goes on.

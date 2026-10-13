@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"math/big"
+	"net"
 	"net/http"
 	"net/url"
 	"sort"
@@ -48,7 +49,7 @@ type explorer struct {
 // a key. A coin that is not listed has no balance shown.
 var explorers = map[string]explorer{
 	"BTC":  {"esplora", "https://mempool.space/api", 1e8, ""},
-	"LTC":  {"esplora", "https://litecoinspace.org/api", 1e8, "litecoin"},
+	"LTC":  {"blockcypher", "https://api.blockcypher.com/v1/ltc/main", 1e8, "litecoin"},
 	"MEWC": {"esplora", "https://explorer.mewccrypto.com/api", 1e8, "meowcoin"},
 	"DOGE": {"blockcypher", "https://api.blockcypher.com/v1/doge/main", 1e8, "dogecoin"},
 	"RVN":  {"blockbook", "https://blockbook.ravencoin.org/api/v2", 1e8, "ravencoin"},
@@ -56,6 +57,11 @@ var explorers = map[string]explorer{
 	"ETC":  {"blockscout", "https://etc.blockscout.com/api/v2", 1e18, "ethereum-classic"},
 	"ERG":  {"ergo", "https://api.ergoplatform.com/api/v1", 1e9, "ergo"},
 	"FIRO": {"insight", "https://explorer.firo.org/insight-api-zcoin", 1e8, "zcoin"},
+	// a public node of the network
+	"ETHW": {"node", "https://mainnet.ethereumpow.org", 1e18, "ethereum-pow-iou"},
+	// public Electrum servers, as "host:port"; a NEXA has two decimals
+	"NEXA": {"electrum-address", "electrum.nexa.org:20002", 100, "nexacoin"},
+	"RXD":  {"electrum-script", "electrumx.radiant4people.com:50012", 1e8, "radiant"},
 }
 
 // Supported lists the coins whose balances can be asked for.
@@ -83,8 +89,12 @@ type Reader struct {
 	// Client is used for the requests, http.DefaultClient with a timeout
 	// if nil.
 	Client *http.Client
-	// Base replaces the address of every explorer. For tests.
+	// Base replaces the address of every explorer that is asked over
+	// HTTP. For tests.
 	Base string
+	// Dial replaces the connection to an Electrum server, which is TLS
+	// with a checked certificate otherwise. For tests.
+	Dial func(ctx context.Context, server string) (net.Conn, error)
 }
 
 // amount is a number that explorers send as a number or as text, in the
@@ -116,11 +126,17 @@ func (r *Reader) Balance(ctx context.Context, currency, address string) (Balance
 		return Balance{}, fmt.Errorf("no %s address", currency)
 	}
 	host := e.base
-	if u, err := url.Parse(e.base); err == nil {
-		host = u.Host
-	}
-	if r.Base != "" {
-		e.base = strings.TrimRight(r.Base, "/")
+	if strings.HasPrefix(e.kind, "electrum") {
+		if name, _, err := net.SplitHostPort(e.base); err == nil {
+			host = name
+		}
+	} else {
+		if u, err := url.Parse(e.base); err == nil {
+			host = u.Host
+		}
+		if r.Base != "" {
+			e.base = strings.TrimRight(r.Base, "/")
+		}
 	}
 	b := Balance{Currency: currency, Address: address, Explorer: host}
 	escaped := url.PathEscape(address)
@@ -206,6 +222,12 @@ func (r *Reader) Balance(ctx context.Context, currency, address string) (Balance
 		if reply.Balance != nil {
 			confirmed, pending = reply.Balance.value, reply.Unconfirmed.value
 		}
+	case "node":
+		confirmed, err = r.nodeBalance(ctx, e.base, address)
+	case "electrum-address":
+		confirmed, pending, err = r.electrumBalance(ctx, e.base, address, false)
+	case "electrum-script":
+		confirmed, pending, err = r.electrumBalance(ctx, e.base, address, true)
 	default:
 		err = fmt.Errorf("explorer of kind %q", e.kind)
 	}
@@ -217,13 +239,21 @@ func (r *Reader) Balance(ctx context.Context, currency, address string) (Balance
 }
 
 func (r *Reader) get(ctx context.Context, address string, into any) error {
+	return r.send(ctx, http.MethodGet, address, nil, into)
+}
+
+// send asks an explorer over HTTP and reads its JSON answer into into.
+func (r *Reader) send(ctx context.Context, method, address string, payload io.Reader, into any) error {
 	client := r.Client
 	if client == nil {
 		client = &http.Client{Timeout: 20 * time.Second}
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, address, nil)
+	req, err := http.NewRequestWithContext(ctx, method, address, payload)
 	if err != nil {
 		return err
+	}
+	if payload != nil {
+		req.Header.Set("Content-Type", "application/json")
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", "hashsteer")
