@@ -34,7 +34,7 @@ import (
 
 // Version is this build's number. It is shown in the interface, and what a
 // newer release is measured against. It is raised with every release.
-const Version = "0.8.7"
+const Version = "0.8.8"
 
 const (
 	logLines          = 1000
