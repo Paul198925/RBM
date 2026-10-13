@@ -21,7 +21,7 @@ func walletServer(t *testing.T, body string, asked *string) *Zpool {
 
 func TestZpoolBalance(t *testing.T) {
 	var asked string
-	z := walletServer(t, `{"currency": "RVN", "unsold": 12.5, "balance": "152.09", "unpaid": 164.59, "paid24h": 217.2, "total": 727.8,
+	z := walletServer(t, `{"currency": "RVN", "unsold": 12.5, "balance": "152.09", "unpaid": 164.59, "paid24h": 217.2, "paidtotal": 727.8, "no_fees": 0, "minpay": 0.05,
 		"miners": [{"version": "rigel", "algo": "kawpow"}],
 		"payouts": [
 			{"time": "1791693259", "amount": "56.68336412", "tx": "7c66"},

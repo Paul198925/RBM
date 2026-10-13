@@ -41,7 +41,10 @@ type zpoolWallet struct {
 	Unpaid   flexFloat `json:"unpaid"`
 	Paid24h  flexFloat `json:"paid24h"`
 	Total    flexFloat `json:"total"`
-	Payouts  []struct {
+	// PaidTotal is what the detailed answer calls the total: everything
+	// earned, paid out or not. It has no "total".
+	PaidTotal flexFloat `json:"paidtotal"`
+	Payouts   []struct {
 		Time   flexFloat `json:"time"`
 		Amount flexFloat `json:"amount"`
 		Tx     string    `json:"tx"`
@@ -68,6 +71,10 @@ func (z *Zpool) Balance(ctx context.Context) (Balance, error) {
 		return Balance{}, errors.New("zpool: the pool does not know this wallet yet")
 	}
 
+	total := float64(wallet.Total)
+	if total == 0 {
+		total = float64(wallet.PaidTotal)
+	}
 	balance := Balance{
 		Pool:     z.Name(),
 		Currency: wallet.Currency,
@@ -75,7 +82,7 @@ func (z *Zpool) Balance(ctx context.Context) (Balance, error) {
 		Unsold:   float64(wallet.Unsold),
 		Unpaid:   float64(wallet.Unpaid),
 		Paid24h:  float64(wallet.Paid24h),
-		Total:    float64(wallet.Total),
+		Total:    total,
 		Payouts:  []Payout{},
 		Updated:  time.Now(),
 	}
