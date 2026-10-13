@@ -11,6 +11,7 @@ import (
 	"hashsteer/internal/device"
 	"hashsteer/internal/engine"
 	"hashsteer/internal/pool"
+	"hashsteer/internal/wallet"
 )
 
 func sample() Snapshot {
@@ -38,7 +39,8 @@ func sample() Snapshot {
 			{Device: device.Device{ID: "GPU#01", Model: "RTX 2080 SUPER"}, Telemetry: &device.Telemetry{TemperatureC: 84, FanPercent: 90, PowerWatts: 205, UtilizationPercent: 99}},
 			{Device: device.Device{ID: "CPU#00", Model: "Ryzen 5"}},
 		},
-		Balances: api.BalanceInfo{Balances: []pool.Balance{{Pool: "zpool", Currency: "BTC", Balance: 0.0001, Unpaid: 0.00012, Paid24h: 0}}},
+		Balances: api.BalanceInfo{Balances: []pool.Balance{{Pool: "zpool", Currency: "BTC", Balance: 0.0001, Unpaid: 0.00012, Paid24h: 0}},
+			Wallets: []wallet.Balance{{Currency: "RVN", Address: "RDemoWalletAddressForTheInterface01", Balance: 1840.5, Pending: 56.68}}},
 		Benchmarks: []engine.BenchmarkStatus{
 			{Group: "RTX 3060", Status: engine.BenchPending},
 			{Group: "RTX 3060", Status: engine.BenchPending},
@@ -50,7 +52,7 @@ func sample() Snapshot {
 }
 
 func TestRenderShowsWhatMatters(t *testing.T) {
-	lines := Render(sample(), 120, 40, false)
+	lines := Render(sample(), 120, 44, false)
 	text := strings.Join(lines, "\n")
 	if os.Getenv("HASHSTEER_SHOW_CONSOLE") != "" {
 		t.Log("\n" + text)
@@ -66,6 +68,7 @@ func TestRenderShowsWhatMatters(t *testing.T) {
 		"CPU: idle - nothing pays more than the power costs",
 		"3 benchmarks are open, about 10m to go.",
 		"84 °C", "0.00012 BTC",
+		"RVN   RDemoWa...face01  1840.5 RVN    56.68 RVN",
 		"[P] pause   [Q] quit",
 	} {
 		if !strings.Contains(text, want) {
@@ -78,8 +81,8 @@ func TestRenderShowsWhatMatters(t *testing.T) {
 	if strings.Contains(text, "\x1b") {
 		t.Error("colour codes although none were asked for")
 	}
-	if len(lines) != 39 {
-		t.Errorf("%d lines, want the window of 40 filled but for the last line", len(lines))
+	if len(lines) != 43 {
+		t.Errorf("%d lines, want the window of 44 filled but for the last line", len(lines))
 	}
 	// the log is cut from the front: the newest lines stay
 	if !strings.Contains(text, "log line "+strings.Repeat("x", 59)[:20]) || !strings.HasPrefix(lines[len(lines)-3], "13:59:00 log line xxxxx") {

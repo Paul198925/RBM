@@ -23,6 +23,7 @@ import (
 	"hashsteer/internal/pool"
 	"hashsteer/internal/stats"
 	"hashsteer/internal/sysinfo"
+	"hashsteer/internal/wallet"
 )
 
 //go:embed web
@@ -151,6 +152,10 @@ type BalanceInfo struct {
 	Balances []pool.Balance `json:"balances"`
 	// Error says why a balance is missing or old, empty if all is well.
 	Error string `json:"error,omitempty"`
+	// Wallets is what has arrived at the wallets themselves, as public
+	// block explorers tell it. WalletError says why one is missing or old.
+	Wallets     []wallet.Balance `json:"wallets"`
+	WalletError string           `json:"wallet_error,omitempty"`
 }
 
 // Meta is what the interface needs to know to offer sensible choices.
@@ -163,6 +168,8 @@ type Meta struct {
 	Currencies []pool.PayoutCurrency `json:"payout_currencies"`
 	// CoinPools are the pools that pay in the mined coin.
 	CoinPools []pool.CoinPoolInfo `json:"coin_pools"`
+	// WalletCoins are the coins whose wallet balances can be shown.
+	WalletCoins []string `json:"wallet_coins"`
 }
 
 // MinerInfo describes a miner program the application knows.

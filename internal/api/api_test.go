@@ -18,6 +18,7 @@ import (
 	"hashsteer/internal/pool"
 	"hashsteer/internal/stats"
 	"hashsteer/internal/sysinfo"
+	"hashsteer/internal/wallet"
 )
 
 // fakeBackend records what the API asks of the application.
@@ -71,7 +72,10 @@ func (f *fakeBackend) System() System {
 func (f *fakeBackend) SetPaused(paused bool) { f.paused = paused }
 
 func (f *fakeBackend) Balances() BalanceInfo {
-	return BalanceInfo{Balances: []pool.Balance{{Pool: "zpool", Currency: "RVN", Balance: 152.09, Unsold: 12.5, Unpaid: 164.59, Paid24h: 217.2, Total: 727.8,
+	return BalanceInfo{Wallets: []wallet.Balance{
+		{Currency: "RVN", Address: "RDemoWalletAddressForTheInterface01", Balance: 1840.52, Pending: 56.68, Explorer: "blockbook.ravencoin.org", Updated: time.Date(2026, 10, 11, 9, 0, 0, 0, time.UTC)},
+		{Currency: "BTC", Address: "bc1qdemowalletaddressfortheinterface0", Balance: 0.00412, Explorer: "mempool.space", Updated: time.Date(2026, 10, 11, 9, 0, 0, 0, time.UTC)},
+	}, Balances: []pool.Balance{{Pool: "zpool", Currency: "RVN", Balance: 152.09, Unsold: 12.5, Unpaid: 164.59, Paid24h: 217.2, Total: 727.8,
 		Payouts: []pool.Payout{{Time: time.Date(2026, 10, 11, 5, 34, 19, 0, time.UTC), Amount: 56.68336412, Tx: "7c66"}}}}}
 }
 
@@ -107,7 +111,7 @@ func (f *fakeBackend) Meta(ctx context.Context) Meta {
 	return Meta{Version: "test", ConfigDir: "config", Regions: config.ZpoolRegions,
 		Miners:     []MinerInfo{{Name: "rigel", Version: "1.23.2", Vendor: "NVIDIA", Algorithms: []string{"kawpow"}}},
 		Currencies: []pool.PayoutCurrency{{Symbol: "BTC", Name: "Bitcoin"}},
-		CoinPools:  pool.CoinPools()}
+		CoinPools:  pool.CoinPools(), WalletCoins: wallet.Supported()}
 }
 
 func (f *fakeBackend) ResetBenchmarks(which string, hashKeys []string) {

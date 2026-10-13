@@ -27,6 +27,7 @@ import (
 	"hashsteer/internal/stats"
 	"hashsteer/internal/sysinfo"
 	"hashsteer/internal/update"
+	"hashsteer/internal/wallet"
 )
 
 // Version is this build's number. It is shown in the interface, and what a
@@ -69,6 +70,9 @@ type App struct {
 	balanceFn   func(context.Context, *pool.Zpool) (pool.Balance, error)
 	// nil leaves the coin pools unasked
 	coinBalanceFn func(context.Context, pool.CoinPool) ([]pool.Balance, error)
+	// walletFn asks a block explorer what an address holds, nil to ask
+	// none
+	walletFn func(ctx context.Context, currency, address string) (wallet.Balance, error)
 	// what coins cost, for the pools that pay in the mined coin
 	coinPrices rates.CoinGecko
 
@@ -89,6 +93,10 @@ type App struct {
 	balances     api.BalanceInfo
 	balanceKey   string
 	balanceAt    time.Time
+	wallets      []wallet.Balance
+	walletError  string
+	walletKey    string
+	walletAt     time.Time
 	update       updateState
 }
 
@@ -128,8 +136,9 @@ func NewApp(ctx context.Context, configDir string, out io.Writer) (*App, error) 
 		coinBalanceFn: func(ctx context.Context, p pool.CoinPool) ([]pool.Balance, error) {
 			return p.Balances(ctx)
 		},
-		cfg:     cfg,
-		waiting: "starting",
+		walletFn: (&wallet.Reader{}).Balance,
+		cfg:      cfg,
+		waiting:  "starting",
 	}, nil
 }
 
@@ -206,6 +215,7 @@ func (a *App) watch(ctx context.Context) {
 	for {
 		a.readTelemetry(ctx)
 		a.readBalance(ctx)
+		a.readWallets(ctx)
 		select {
 		case <-ctx.Done():
 			return
@@ -385,6 +395,60 @@ func (a *App) readBalance(ctx context.Context) {
 	info.Error = strings.Join(failed, "; ")
 	a.mu.Lock()
 	a.balances, a.balanceKey, a.balanceAt = info, key, time.Now()
+	a.mu.Unlock()
+}
+
+// readWallets asks the block explorers what has arrived at the wallets, now
+// and then, and at once when a wallet changes. Only coins with a known
+// explorer are asked for, and none if the configuration says so.
+func (a *App) readWallets(ctx context.Context) {
+	cfg := a.Config()
+	type asked struct{ coin, address string }
+	var list []asked
+	if !cfg.Pools.NoWalletBalances {
+		for coin, address := range cfg.Pools.Wallets {
+			if wallet.Known(coin) && strings.TrimSpace(address) != "" {
+				list = append(list, asked{strings.ToUpper(coin), strings.TrimSpace(address)})
+			}
+		}
+	}
+	sort.Slice(list, func(i, j int) bool { return list[i].coin < list[j].coin })
+	key := fmt.Sprint(list)
+
+	a.mu.Lock()
+	due := key != a.walletKey || time.Since(a.walletAt) >= balanceInterval
+	var old []wallet.Balance
+	if key == a.walletKey {
+		old = a.wallets
+	}
+	a.mu.Unlock()
+	if !due || a.walletFn == nil {
+		return
+	}
+
+	balances := []wallet.Balance{}
+	var failed []string
+	for _, w := range list {
+		callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		balance, err := a.walletFn(callCtx, w.coin, w.address)
+		cancel()
+		if err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			failed = append(failed, err.Error())
+			// an old figure is better than none
+			for _, b := range old {
+				if b.Currency == w.coin && b.Address == w.address {
+					balances = append(balances, b)
+				}
+			}
+			continue
+		}
+		balances = append(balances, balance)
+	}
+	a.mu.Lock()
+	a.wallets, a.walletError, a.walletKey, a.walletAt = balances, strings.Join(failed, "; "), key, time.Now()
 	a.mu.Unlock()
 }
 
@@ -641,7 +705,12 @@ func (a *App) Offers() []pool.Offer {
 func (a *App) Balances() api.BalanceInfo {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	return a.balances
+	info := a.balances
+	info.Wallets, info.WalletError = a.wallets, a.walletError
+	if info.Wallets == nil {
+		info.Wallets = []wallet.Balance{}
+	}
+	return info
 }
 
 func (a *App) Activity() ([]stats.Run, error) {
@@ -709,11 +778,12 @@ func (a *App) SaveConfig(cfg config.Config) error {
 
 func (a *App) Meta(ctx context.Context) api.Meta {
 	meta := api.Meta{
-		Version:    Version,
-		ConfigDir:  a.configDir,
-		Regions:    config.ZpoolRegions,
-		CoinPools:  pool.CoinPools(),
-		Currencies: a.payoutCurrencies(ctx),
+		Version:     Version,
+		ConfigDir:   a.configDir,
+		Regions:     config.ZpoolRegions,
+		CoinPools:   pool.CoinPools(),
+		WalletCoins: wallet.Supported(),
+		Currencies:  a.payoutCurrencies(ctx),
 	}
 	if abs, err := filepath.Abs(a.configDir); err == nil {
 		meta.ConfigDir = abs

@@ -182,7 +182,7 @@ const state = {
   log: [],
   minerLogs: [],
   minerLog: { name: '', text: '' },
-  balances: { balances: [] },
+  balances: { balances: [], wallets: [] },
   activity: [],
   totals: [],
   benchmarks: [],
@@ -358,6 +358,22 @@ function balanceCards() {
       h('dt', {}, 'Updated'), h('dd', {}, fmtAgo(b.updated) ? fmtAgo(b.updated) + ' ago' : '-')))));
 }
 
+// What has arrived at the wallets themselves, as block explorers tell it.
+function walletCards() {
+  const info = state.balances;
+  const wallets = info.wallets || [];
+  if (!wallets.length && !info.wallet_error) return null;
+  return [h('h2', {}, 'Wallets'),
+    info.wallet_error ? h('p', { class: 'help' }, 'Could not be updated: ' + info.wallet_error) : null,
+    h('div', { class: 'cards' }, wallets.map(w => h('div', { class: 'card balance', title: w.address + ', as ' + w.explorer + ' tells it' },
+      h('h3', {}, w.currency + ' wallet'),
+      h('div', { class: 'main' }, fmtCoin(w.balance, w.currency)),
+      h('dl', {},
+        h('dt', {}, 'Address'), h('dd', {}, w.address.length > 12 ? w.address.slice(0, 5) + '...' + w.address.slice(-4) : w.address),
+        h('dt', {}, 'Unconfirmed'), h('dd', {}, w.pending ? fmtCoin(w.pending, w.currency) : '-'),
+        h('dt', {}, 'Updated'), h('dd', {}, fmtAgo(w.updated) ? fmtAgo(w.updated) + ' ago' : '-')))))];
+}
+
 function renderDashboard() {
   const s = state.status;
   if (!s) return h('div', { class: 'empty' }, 'Loading ...');
@@ -406,7 +422,8 @@ function renderDashboard() {
     h('h2', {}, 'System Information'), system,
     h('h2', {}, 'Balances'),
     state.balances.error && state.balances.balances.length ? h('p', { class: 'help' }, 'Could not be updated: ' + state.balances.error) : null,
-    balanceCards());
+    balanceCards(),
+    walletCards());
 }
 
 function card(label, value, sub) {
@@ -1008,7 +1025,8 @@ function setupWallets() {
       h('tbody', {}, rows.map(line))) : h('div', { class: 'empty' }, 'No wallet yet.'),
     h('datalist', { id: 'wallet-coins' }, Array.from(known).map(([symbol, name]) => h('option', { value: symbol }, name))),
     h('div', { class: 'go' }, h('button', { onclick: () => { rows.push({ coin: '', address: '' }); render(); } }, 'Add a wallet')),
-    missing.length ? h('p', { class: 'help' }, 'The enabled pools could also use a wallet for: ' + missing.join('; ') + '.') : null);
+    missing.length ? h('p', { class: 'help' }, 'The enabled pools could also use a wallet for: ' + missing.join('; ') + '.') : null,
+    boolField('Do not ask block explorers for the wallet balances', 'pools.no_wallet_balances', 'The dashboard shows what has arrived at each wallet. For that the address is sent every ten minutes to a public block explorer of its coin, which sees it together with your internet address. Balances are known for ' + (state.meta.wallet_coins || []).join(', ') + '. Tick this to keep the addresses between you and the pools.'));
 }
 
 // zpoolWalletField says which wallet zpool pays to. An address of its own

@@ -302,6 +302,22 @@ func Render(s Snapshot, width, height int, colour bool) []string {
 		add(out[1:]...)
 	}
 
+	// ---- what has arrived at the wallets
+	if len(s.Balances.Wallets) > 0 {
+		section("WALLETS")
+		var rows [][]string
+		for _, w := range s.Balances.Wallets {
+			pending := ""
+			if w.Pending != 0 {
+				pending = coins(w.Pending, w.Currency)
+			}
+			rows = append(rows, []string{w.Currency, short(w.Address), coins(w.Balance, w.Currency), pending})
+		}
+		out := table([]string{"Coin", "Address", "Balance", "Unconfirmed"}, map[int]bool{2: true, 3: true}, rows)
+		add(p.in(dim, out[0]))
+		add(out[1:]...)
+	}
+
 	// ---- the keys, at the bottom
 	var foot []string
 	if s.Keys {
@@ -336,6 +352,15 @@ func Render(s Snapshot, width, height int, colour bool) []string {
 		lines[i] = clip(line, width-1)
 	}
 	return lines
+}
+
+// short shows an address by its ends: enough to tell wallets apart.
+func short(address string) string {
+	if utf8.RuneCountInString(address) <= 16 {
+		return address
+	}
+	r := []rune(address)
+	return string(r[:7]) + "..." + string(r[len(r)-6:])
 }
 
 // clip cuts a line to n visible characters. Colour codes do not count, and

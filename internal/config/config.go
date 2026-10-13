@@ -137,10 +137,13 @@ type API struct {
 type Pools struct {
 	// Wallets holds one payout address per coin, by its symbol. Pools that
 	// pay in the coin that is mined offer the coins that have one.
-	Wallets    Wallets  `yaml:"wallets" json:"wallets"`
-	Zpool      Zpool    `yaml:"zpool" json:"zpool"`
-	TwoMiners  CoinPool `yaml:"2miners" json:"twominers"`
-	WoolyPooly CoinPool `yaml:"woolypooly" json:"woolypooly"`
+	Wallets Wallets `yaml:"wallets" json:"wallets"`
+	// NoWalletBalances keeps the wallet addresses to the pools: no block
+	// explorer is asked what has arrived at them.
+	NoWalletBalances bool     `yaml:"no_wallet_balances" json:"no_wallet_balances"`
+	Zpool            Zpool    `yaml:"zpool" json:"zpool"`
+	TwoMiners        CoinPool `yaml:"2miners" json:"twominers"`
+	WoolyPooly       CoinPool `yaml:"woolypooly" json:"woolypooly"`
 }
 
 // Wallets maps coin symbols like "RVN" to payout addresses.
