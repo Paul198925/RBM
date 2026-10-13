@@ -82,6 +82,24 @@ sh start.sh
 
 If Go is missing, `start.sh` says how to install it on your distribution. The Go that distributions package is often older than 1.27; from Go 1.21 on it fetches the version it needs by itself.
 
+#### In screen
+
+On a rig you reach over SSH, hashsteer stops when the connection ends. [GNU Screen](https://www.gnu.org/software/screen/) keeps it running and lets you come back to its dashboard. Install it with your distribution's package manager, for example `sudo apt-get install screen`.
+
+```sh
+cd hashsteer
+screen -S hashsteer sh start.sh
+```
+
+- **Ctrl+A**, then **D** leaves hashsteer running and takes you back to the shell. You can log out now.
+- `screen -r hashsteer` brings the dashboard back, with its keys: **P** pauses, **Q** quits.
+- `screen -ls` lists what is running.
+- `screen -dmS hashsteer sh start.sh` starts it without showing it, for a script.
+
+Screen does not start hashsteer again after a reboot. For that, use the service below instead; do not run both at once: the second one finds the port of the web interface taken and does not start.
+
+#### As a service
+
 To mine from boot on, as a systemd service that runs as your user:
 
 ```sh
