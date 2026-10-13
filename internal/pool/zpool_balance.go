@@ -19,8 +19,11 @@ type Balance struct {
 	Balance float64 `json:"balance"`
 	Unsold  float64 `json:"unsold"`
 	// Unpaid is both together.
-	Unpaid  float64 `json:"unpaid"`
-	Paid24h float64 `json:"paid_24h"`
+	Unpaid float64 `json:"unpaid"`
+	// ValueBTC is what Unpaid is worth in bitcoin, 0 if the price of the
+	// currency is not known. The pool does not say; it is added later.
+	ValueBTC float64 `json:"value_btc"`
+	Paid24h  float64 `json:"paid_24h"`
 	// Total is everything ever earned with this wallet at the pool.
 	Total   float64   `json:"total"`
 	Payouts []Payout  `json:"payouts"`

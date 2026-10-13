@@ -1,6 +1,9 @@
 package pool
 
-import "context"
+import (
+	"context"
+	"strings"
+)
 
 // CoinInfo names a coin a pool offers, and the algorithm it is mined with.
 type CoinInfo struct {
@@ -75,6 +78,28 @@ type poolCoin struct {
 	divisor float64
 	// priceID names the coin at the price service
 	priceID string
+}
+
+// The names at the price service of coins that pools pay out in and that
+// are not among the coins of the coin pools.
+var payoutPriceIDs = map[string]string{
+	"BCH": "bitcoin-cash", "DASH": "dash", "DGB": "digibyte", "DOGE": "dogecoin", "KAS": "kaspa", "LTC": "litecoin",
+	"VTC": "vertcoin", "XMR": "monero", "ZEC": "zcash",
+}
+
+// PriceID returns the name of a coin at the price service, by its symbol.
+// It is empty for a coin that is not known here, and for Bitcoin, which is
+// what prices are told in.
+func PriceID(symbol string) string {
+	symbol = strings.ToUpper(symbol)
+	for _, coins := range [][]poolCoin{twoMinersCoins, woolyPoolyCoins} {
+		for _, c := range coins {
+			if c.Symbol == symbol {
+				return c.priceID
+			}
+		}
+	}
+	return payoutPriceIDs[symbol]
 }
 
 func coinInfos(coins []poolCoin) []CoinInfo {

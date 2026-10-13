@@ -75,7 +75,7 @@ func (f *fakeBackend) Balances() BalanceInfo {
 	return BalanceInfo{Wallets: []wallet.Balance{
 		{Currency: "RVN", Address: "RDemoWalletAddressForTheInterface01", Balance: 1840.52, Pending: 56.68, ValueBTC: 0.000412, Explorer: "blockbook.ravencoin.org", Updated: time.Date(2026, 10, 11, 9, 0, 0, 0, time.UTC)},
 		{Currency: "BTC", Address: "bc1qdemowalletaddressfortheinterface0", Balance: 0.00412, ValueBTC: 0.00412, Explorer: "mempool.space", Updated: time.Date(2026, 10, 11, 9, 0, 0, 0, time.UTC)},
-	}, Balances: []pool.Balance{{Pool: "zpool", Currency: "RVN", Balance: 152.09, Unsold: 12.5, Unpaid: 164.59, Paid24h: 217.2, Total: 727.8,
+	}, Balances: []pool.Balance{{Pool: "zpool", Currency: "RVN", Balance: 152.09, Unsold: 12.5, Unpaid: 164.59, ValueBTC: 0.0000329, Paid24h: 217.2, Total: 727.8,
 		Payouts: []pool.Payout{{Time: time.Date(2026, 10, 11, 5, 34, 19, 0, time.UTC), Amount: 56.68336412, Tx: "7c66"}}}}}
 }
 

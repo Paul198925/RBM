@@ -39,7 +39,7 @@ func sample() Snapshot {
 			{Device: device.Device{ID: "GPU#01", Model: "RTX 2080 SUPER"}, Telemetry: &device.Telemetry{TemperatureC: 84, FanPercent: 90, PowerWatts: 205, UtilizationPercent: 99}},
 			{Device: device.Device{ID: "CPU#00", Model: "Ryzen 5"}},
 		},
-		Balances: api.BalanceInfo{Balances: []pool.Balance{{Pool: "zpool", Currency: "BTC", Balance: 0.0001, Unpaid: 0.00012, Paid24h: 0}},
+		Balances: api.BalanceInfo{Balances: []pool.Balance{{Pool: "zpool", Currency: "BTC", Balance: 0.0001, Unpaid: 0.00012, ValueBTC: 0.00012, Paid24h: 0}},
 			Wallets: []wallet.Balance{{Currency: "RVN", Address: "RDemoWalletAddressForTheInterface01", Balance: 1840.5, Pending: 56.68, ValueBTC: 0.0004}}},
 		Benchmarks: []engine.BenchmarkStatus{
 			{Group: "RTX 3060", Status: engine.BenchPending},
@@ -67,7 +67,7 @@ func TestRenderShowsWhatMatters(t *testing.T) {
 		"benchmarking", "RVN",
 		"CPU: idle - nothing pays more than the power costs",
 		"3 benchmarks are open, about 10m to go.",
-		"84 °C", "0.00012 BTC",
+		"84 °C", "zpool  0.00012 BTC  12.00 EUR  0.0001 BTC",
 		"RVN   RDemoWa...face01  1840.5 RVN  40.00 EUR    56.68 RVN",
 		"[P] pause   [Q] quit",
 	} {

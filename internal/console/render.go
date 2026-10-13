@@ -295,9 +295,13 @@ func Render(s Snapshot, width, height int, colour bool) []string {
 		section("POOL BALANCES")
 		var rows [][]string
 		for _, b := range s.Balances.Balances {
-			rows = append(rows, []string{b.Pool, coins(b.Unpaid, b.Currency), coins(b.Balance, b.Currency), coins(b.Paid24h, b.Currency)})
+			worth := ""
+			if b.ValueBTC > 0 && s.Status.BTCPrice > 0 {
+				worth = fmt.Sprintf("%.2f %s", b.ValueBTC*s.Status.BTCPrice, s.Status.Currency)
+			}
+			rows = append(rows, []string{b.Pool, coins(b.Unpaid, b.Currency), worth, coins(b.Balance, b.Currency), coins(b.Paid24h, b.Currency)})
 		}
-		out := table([]string{"Pool", "Unpaid", "Confirmed", "Paid in 24 h"}, map[int]bool{1: true, 2: true, 3: true}, rows)
+		out := table([]string{"Pool", "Unpaid", "Worth", "Confirmed", "Paid in 24 h"}, map[int]bool{1: true, 2: true, 3: true, 4: true}, rows)
 		add(p.in(dim, out[0]))
 		add(out[1:]...)
 	}

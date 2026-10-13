@@ -398,6 +398,7 @@ func (a *App) readBalance(ctx context.Context) {
 		info.Balances = append(info.Balances, balances...)
 	}
 	info.Error = strings.Join(failed, "; ")
+	a.valueBalances(ctx, info.Balances)
 	a.mu.Lock()
 	a.balances, a.balanceKey, a.balanceAt = info, key, time.Now()
 	a.mu.Unlock()
@@ -456,6 +457,33 @@ func (a *App) readWallets(ctx context.Context) {
 	a.mu.Lock()
 	a.wallets, a.walletError, a.walletKey, a.walletAt = balances, strings.Join(failed, "; "), key, time.Now()
 	a.mu.Unlock()
+}
+
+// valueBalances says what the pools hold is worth in bitcoin, where the
+// price of the currency is known.
+func (a *App) valueBalances(ctx context.Context, balances []pool.Balance) {
+	var ids []string
+	for _, b := range balances {
+		if id := pool.PriceID(b.Currency); id != "" && !slices.Contains(ids, id) {
+			ids = append(ids, id)
+		}
+	}
+	prices := map[string]float64{}
+	if len(ids) > 0 && a.walletPriceFn != nil {
+		callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		if found, err := a.walletPriceFn(callCtx, ids); err == nil {
+			prices = found
+		}
+		cancel()
+	}
+	for i, b := range balances {
+		switch {
+		case strings.EqualFold(b.Currency, "BTC"):
+			balances[i].ValueBTC = b.Unpaid
+		case prices[pool.PriceID(b.Currency)] > 0:
+			balances[i].ValueBTC = b.Unpaid * prices[pool.PriceID(b.Currency)]
+		}
+	}
 }
 
 // valueWallets says what the balances are worth in bitcoin. Without a price

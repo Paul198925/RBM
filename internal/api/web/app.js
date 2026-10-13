@@ -351,6 +351,7 @@ function balanceCards() {
     h('h3', {}, b.pool),
     h('div', { class: 'main' }, fmtCoin(b.unpaid, b.currency)),
     h('dl', {},
+      h('dt', {}, 'Worth'), h('dd', {}, fiat(b.value_btc) || '-'),
       h('dt', {}, 'Confirmed'), h('dd', {}, fmtCoin(b.balance, b.currency)),
       h('dt', {}, 'Pending'), h('dd', {}, fmtCoin(b.unsold, b.currency)),
       h('dt', {}, 'Paid in 24 h'), h('dd', {}, fmtCoin(b.paid_24h, b.currency)),
@@ -527,7 +528,9 @@ function renderEarnings() {
     info.error ? h('p', { class: 'help' }, 'Could not be updated: ' + info.error) : null,
     dataTable('earnings', [
       { key: 'pool', label: 'Name' }, { key: 'currency', label: 'Currency' },
-      amount('balance'), amount('unsold'), amount('unpaid'), amount('paid_24h'), amount('total'),
+      amount('balance'), amount('unsold'), amount('unpaid'),
+      { key: 'value_btc', label: 'Worth', num: true, filter: false, cell: b => fiat(b.value_btc) || '-' },
+      amount('paid_24h'), amount('total'),
       { key: 'updated', label: 'Last Updated', filter: false, value: b => new Date(b.updated).getTime(), cell: b => fmtDate(b.updated) },
     ], info.balances, { empty: 'Nothing yet. The pools are asked every ten minutes once a wallet is set.' }).el);
 }
