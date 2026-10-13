@@ -7,7 +7,7 @@ import (
 )
 
 // The size of the console window as the web interface shows it: wide
-// enough for the widest table, and tall enough for a good piece of the log.
+// enough for the widest table, and tall enough for all there is to show.
 const (
 	consoleColumns = 150
 	consoleRows    = 46
@@ -16,7 +16,8 @@ const (
 // Console returns what the console window shows, drawn anew: the same
 // picture `hashsteer run` paints into a terminal, as lines with the
 // terminal's colour codes in them. The keys are left out; a page has
-// buttons for what they do.
+// buttons for what they do. So is the end of the log: the page shows the
+// whole log right below.
 func (a *App) Console() []string {
 	cfg := a.Config()
 	return console.Render(console.Snapshot{
@@ -31,6 +32,5 @@ func (a *App) Console() []string {
 		Balances:   a.Balances(),
 		Update:     a.UpdateInfo(),
 		Benchmarks: a.Benchmarks(),
-		Log:        a.Log(),
 	}, consoleColumns, consoleRows, true)
 }

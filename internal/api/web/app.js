@@ -1442,7 +1442,7 @@ function renderConsole() {
       h('button', { class: 'small', onclick: () => { state.minerLog = { name: '', text: '' }; render(); } }, 'Close')),
     h('pre', { class: 'log active' }, state.minerLog.text || '(empty)')] : null;
   const out = h('div', {}, h('h1', {}, 'Console'),
-    h('p', { class: 'lead' }, 'What the window shows that hashsteer runs in, redrawn every few seconds. Below are the whole log, and what the miner programs that run right now write themselves.'),
+    h('p', { class: 'lead' }, 'What the window shows that hashsteer runs in, redrawn every few seconds, without the end of the log: the whole log is below, and after it what the miner programs that run right now write themselves.'),
     term,
     h('h2', {}, 'Log'), engineLog,
     h('h2', {}, 'Miner programs'),
