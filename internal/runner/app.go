@@ -81,6 +81,7 @@ type App struct {
 	currencies   []pool.PayoutCurrency
 	currenciesAt time.Time
 	telemetry    map[int]device.Telemetry
+	telemetryAt  time.Time
 	maxTemp      map[int]float64
 	balances     api.BalanceInfo
 	balanceKey   string
@@ -215,7 +216,7 @@ func (a *App) readTelemetry(ctx context.Context) {
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.telemetry = telemetry
+	a.telemetry, a.telemetryAt = telemetry, time.Now()
 	if a.maxTemp == nil {
 		a.maxTemp = map[int]float64{}
 	}
@@ -235,6 +236,21 @@ func (a *App) gpuPower(ctx context.Context) (map[int]float64, error) {
 		power[index] = t.PowerWatts
 	}
 	return power, nil
+}
+
+// gpuLoad hands the engine how busy the graphics cards are. A reading that
+// is no longer fresh says nothing about the miner that runs now.
+func (a *App) gpuLoad(ctx context.Context) (map[int]float64, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if time.Since(a.telemetryAt) > 3*telemetryInterval {
+		return nil, nil
+	}
+	load := make(map[int]float64, len(a.telemetry))
+	for index, t := range a.telemetry {
+		load[index] = t.UtilizationPercent
+	}
+	return load, nil
 }
 
 // ExportEstimates writes what this machine has measured to w, in the form
@@ -466,6 +482,7 @@ func (a *App) build(ctx context.Context, cfg *config.Config, store *stats.Store)
 		Devices:     devices,
 		Launch:      engine.Launch,
 		Power:       a.gpuPower,
+		Load:        a.gpuLoad,
 		Memory:      sysinfo.ReadMemory,
 		Logf:        a.logf,
 	}

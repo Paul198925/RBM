@@ -38,6 +38,9 @@ const (
 
 	// a miner without any hashrate for this long is stopped
 	watchdogTimeout = 5 * time.Minute
+	// a graphics card that is used less than this does not mine, whatever
+	// the miner program says
+	idleLoadPercent = 20
 	// this many failures within crashWindow take a candidate out
 	maxCrashes   = 3
 	crashWindow  = time.Hour
@@ -112,6 +115,10 @@ type Deps struct {
 	// Power returns the measured power draw of GPUs by vendor index, for
 	// miners that do not report their own. May be nil.
 	Power func(ctx context.Context) (map[int]float64, error)
+	// Load returns how busy the GPUs are, in percent by vendor index. It
+	// tells a miner that works from one that only says so. May be nil
+	// and may return nothing, then every miner is believed.
+	Load func(ctx context.Context) (map[int]float64, error)
 	// Memory returns how much memory the machine has left. May be nil,
 	// then memory is not checked.
 	Memory func() (sysinfo.Memory, error)
@@ -212,7 +219,13 @@ type run struct {
 	measureFrom time.Time
 	lastStore   time.Time
 	lastHash    time.Time
+	firstHash   time.Time
 	apiErrors   int
+	// workedAt is when the miner last showed that it works: a share was
+	// accepted or its devices were busy. worked says it ever did.
+	workedAt time.Time
+	worked   bool
+	accepted int64
 
 	// what the run has delivered so far, for the activity log
 	measuredTime time.Duration
@@ -549,12 +562,75 @@ func (e *Engine) checkRun(g *group, now time.Time) {
 	if silentSince.Before(r.measureFrom) {
 		silentSince = r.measureFrom
 	}
-	if now.Sub(silentSince) < silenceLimit(r.algo, !r.lastHash.IsZero()) {
+	if now.Sub(silentSince) >= silenceLimit(r.algo, !r.lastHash.IsZero()) {
+		e.deps.Logf("%s: %s reported no hashrate for %v", g.name, r.label(), now.Sub(silentSince).Round(time.Second))
+		e.stop(g, stats.EndNoHashrate, now)
+		e.failed(g, r.option, now, r.benchmark, fmt.Sprintf("reported no hashrate for %v", now.Sub(silentSince).Round(time.Second)))
 		return
 	}
-	e.deps.Logf("%s: %s reported no hashrate for %v", g.name, r.label(), now.Sub(silentSince).Round(time.Second))
+
+	// a miner can report a hashrate and do nothing: its devices stand
+	// still and no share comes in
+	if r.firstHash.IsZero() {
+		return
+	}
+	idleSince := r.workedAt
+	if idleSince.Before(r.firstHash) {
+		idleSince = r.firstHash
+	}
+	idle := now.Sub(idleSince).Round(time.Second)
+	if idle < watchdogTimeout {
+		return
+	}
+	e.deps.Logf("%s: %s reports a hashrate, but for %v the devices did nothing and no share was accepted", g.name, r.label(), idle)
 	e.stop(g, stats.EndNoHashrate, now)
-	e.failed(g, r.option, now, r.benchmark, fmt.Sprintf("reported no hashrate for %v", now.Sub(silentSince).Round(time.Second)))
+	if !r.worked {
+		// it never worked in this run: what is stored for it may well
+		// come from a run like this one
+		e.dropMeasurement(g, r.hashKey)
+	}
+	e.failed(g, r.option, now, true, fmt.Sprintf("reported a hashrate, but for %v the devices did nothing and no share was accepted", idle))
+}
+
+// dropMeasurement forgets the hashrate stored for a miner on an algorithm.
+func (e *Engine) dropMeasurement(g *group, hashKey string) {
+	if st, ok, err := e.deps.Store.Load(hashKey); err != nil || !ok || st.Duration == 0 {
+		return
+	}
+	for _, stored := range []string{hashKey, powerKeyFor(hashKey)} {
+		if err := e.deps.Store.Delete(stored); err != nil {
+			e.deps.Logf("dropping the hashrate of %s: %v", hashKey, err)
+			return
+		}
+	}
+	if err := e.deps.Store.SetNote(versionNote+hashKey, ""); err != nil {
+		e.deps.Logf("dropping the hashrate of %s: %v", hashKey, err)
+	}
+	e.deps.Logf("%s: the stored hashrate of %s is dropped, it cannot be trusted", g.name, hashKey)
+}
+
+// busy reports whether the devices of g work. Without a reading they are
+// taken to: the CPU has none, and the graphics driver may not answer.
+func (e *Engine) busy(ctx context.Context, g *group, load *map[int]float64) bool {
+	if g.vendor == miner.VendorCPU || e.deps.Load == nil {
+		return true
+	}
+	if *load == nil {
+		*load, _ = e.deps.Load(ctx)
+		if *load == nil {
+			*load = map[int]float64{}
+		}
+	}
+	indexes := g.deviceIndexes()
+	sum := 0.0
+	for _, index := range indexes {
+		percent, ok := (*load)[index]
+		if !ok {
+			return true
+		}
+		sum += percent
+	}
+	return len(indexes) == 0 || sum/float64(len(indexes)) >= idleLoadPercent
 }
 
 // silenceLimit is how long a miner may go without reporting a hashrate.
@@ -1034,7 +1110,7 @@ func (e *Engine) stopAll(now time.Time) {
 // of them has exited.
 func (e *Engine) poll(ctx context.Context, now time.Time) (exited bool) {
 	defer e.publish(now)
-	var gpuPower map[int]float64
+	var gpuPower, gpuLoad map[int]float64
 	for _, g := range e.groups {
 		r := g.run
 		if r == nil {
@@ -1072,9 +1148,17 @@ func (e *Engine) poll(ctx context.Context, now time.Time) (exited bool) {
 			}
 		}
 		r.window.Add(sample)
-		if sample.For(r.algo.NameForMiner()).Hashrate > 0 {
+		figures := sample.For(r.algo.NameForMiner())
+		if figures.Hashrate > 0 {
 			r.lastHash = now
+			if r.firstHash.IsZero() {
+				r.firstHash = now
+			}
 		}
+		if figures.Accepted > r.accepted || e.busy(ctx, g, &gpuLoad) {
+			r.workedAt, r.worked = now, true
+		}
+		r.accepted = figures.Accepted
 	}
 	return exited
 }
@@ -1098,6 +1182,11 @@ func (e *Engine) store(now time.Time) error {
 		r.lastStore = now
 		r.window.Prune(now.Add(-2 * e.opts.Interval))
 		span := now.Sub(since)
+		// a hashrate without work behind it earns nothing and is no
+		// measurement
+		if !r.firstHash.IsZero() && r.workedAt.Before(since) {
+			continue
+		}
 		if n > 0 {
 			// the activity log counts every measured second, also the ones
 			// in which the miner stood still

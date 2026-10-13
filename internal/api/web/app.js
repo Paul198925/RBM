@@ -809,7 +809,7 @@ function renderWatchdog() {
   return h('div', {},
     h('div', { class: 'title' }, h('h1', {}, 'Watchdog Timers'),
       h('button', { class: 'primary', disabled: rows.length === 0, onclick: resetWatchdog }, 'Reset Watchdog')),
-    h('p', { class: 'lead' }, 'A miner that exits on its own or reports no hashrate for five minutes is restarted. One that has mined here before sits out an hour after three failures within an hour. A benchmark that comes to nothing is tried again after six hours, and after a second failure after a day. After the third failure it is given up: not tried again at all, until the miner program has a new version or you let it back in here. This is remembered across restarts.'),
+    h('p', { class: 'lead' }, 'A miner that exits on its own or reports no hashrate for five minutes is restarted. So is one that reports a hashrate while its graphics cards stand still and no share is accepted for five minutes; that counts as a failed benchmark, and a hashrate stored from such a run is dropped. One that has mined here before sits out an hour after three failures within an hour. A benchmark that comes to nothing is tried again after six hours, and after a second failure after a day. After the third failure it is given up: not tried again at all, until the miner program has a new version or you let it back in here. This is remembered across restarts.'),
     t.el);
 }
 

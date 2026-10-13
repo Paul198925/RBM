@@ -57,6 +57,8 @@ type fakeMiner struct {
 	power     float64
 	done      chan struct{}
 	stopped   bool
+	// noShares makes it report no accepted share
+	noShares bool
 }
 
 func (f *fakeMiner) Poll(ctx context.Context) (miner.Sample, error) {
@@ -65,8 +67,12 @@ func (f *fakeMiner) Poll(ctx context.Context) (miner.Sample, error) {
 		return miner.Sample{}, errors.New("connection refused")
 	default:
 	}
+	accepted := int64(1)
+	if f.noShares {
+		accepted = 0
+	}
 	return miner.Sample{
-		Algorithms: map[string]miner.AlgoSample{f.algorithm: {Hashrate: f.hashrate, Accepted: 1}},
+		Algorithms: map[string]miner.AlgoSample{f.algorithm: {Hashrate: f.hashrate, Accepted: accepted}},
 		PowerWatts: f.power,
 	}, nil
 }
@@ -102,6 +108,10 @@ type sim struct {
 	hashrates map[string]float64
 	power     float64
 	launchErr error
+	// load is how busy the graphics card is said to be, nil for no
+	// reading; noShares makes the miners report no accepted share
+	load     map[int]float64
+	noShares bool
 
 	launches []string
 	// where each launch mines, and with which extra arguments
@@ -166,12 +176,14 @@ func newSim(t *testing.T, opts Options, prices map[string]float64) *sim {
 				algorithm: spec.Algorithm.NameForMiner(),
 				hashrate:  s.hashrates[spec.Algorithm.Name],
 				power:     s.power,
+				noShares:  s.noShares,
 				done:      make(chan struct{}),
 			}
 			s.miners = append(s.miners, m)
 			return m, nil
 		},
 		Rate: func(ctx context.Context) (float64, error) { return 50000, nil },
+		Load: func(ctx context.Context) (map[int]float64, error) { return s.load, nil },
 		Logf: func(format string, args ...any) { s.logs = append(s.logs, fmt.Sprintf(format, args...)) },
 	})
 	if err != nil {
