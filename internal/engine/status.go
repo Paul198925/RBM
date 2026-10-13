@@ -29,6 +29,9 @@ type BrokenMiner struct {
 	Miner string `json:"miner"`
 	// Reason says what it lacks, and what to install.
 	Reason string `json:"reason"`
+	// Needs names what it lacks where that can be installed: a shared
+	// library as the loader names it, or NeedsVCRedist. Empty otherwise.
+	Needs string `json:"needs,omitempty"`
 }
 
 // GroupStatus describes one device group.
@@ -119,8 +122,8 @@ func (e *Engine) Status() Status {
 func (e *Engine) publish(now time.Time) {
 	status := Status{Time: now, BTCPrice: e.rate, BenchmarkSeconds: e.opts.BenchmarkTime.Seconds(), Paused: e.paused,
 		Groups: make([]GroupStatus, 0, len(e.groups)), Broken: make([]BrokenMiner, 0, len(e.broken))}
-	for name, why := range e.broken {
-		status.Broken = append(status.Broken, BrokenMiner{Miner: name, Reason: why})
+	for _, b := range e.broken {
+		status.Broken = append(status.Broken, b)
 	}
 	sort.Slice(status.Broken, func(i, j int) bool { return status.Broken[i].Miner < status.Broken[j].Miner })
 	if e.rate > 0 {

@@ -25,6 +25,7 @@ import (
 	"hashsteer/internal/pool"
 	"hashsteer/internal/rates"
 	"hashsteer/internal/stats"
+	"hashsteer/internal/sysfix"
 	"hashsteer/internal/sysinfo"
 	"hashsteer/internal/update"
 	"hashsteer/internal/wallet"
@@ -70,6 +71,8 @@ type App struct {
 	balanceFn   func(context.Context, *pool.Zpool) (pool.Balance, error)
 	// nil leaves the coin pools unasked
 	coinBalanceFn func(context.Context, pool.CoinPool) ([]pool.Balance, error)
+	// fixer installs what a miner program lacks, when the user asks for it
+	fixer sysfix.System
 	// walletFn asks a block explorer what an address holds, nil to ask
 	// none
 	walletFn func(ctx context.Context, currency, address string) (wallet.Balance, error)
@@ -718,13 +721,7 @@ func (a *App) System() api.System {
 	if system.Notices == nil {
 		system.Notices = []string{}
 	}
-	// a miner program that cannot run here is the user's to fix: say so
-	// where it is seen
-	if e := a.currentEngine(); e != nil {
-		for _, b := range e.Status().Broken {
-			system.Notices = append(system.Notices, b.Miner+" cannot run on this machine: "+b.Reason)
-		}
-	}
+	system.Problems = a.problems()
 	if memory, err := sysinfo.ReadMemory(); err == nil {
 		system.Memory = &memory
 	}

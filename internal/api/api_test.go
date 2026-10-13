@@ -23,6 +23,8 @@ import (
 
 // fakeBackend records what the API asks of the application.
 type fakeBackend struct {
+	// fixed are the miner programs whose problem was fixed
+	fixed           map[string]bool
 	cfg             config.Config
 	saved           *config.Config
 	saveErr         error
@@ -65,8 +67,27 @@ func (f *fakeBackend) Devices() []DeviceStatus {
 }
 
 func (f *fakeBackend) System() System {
-	return System{Started: time.Date(2026, 10, 11, 9, 0, 0, 0, time.UTC), Paused: f.paused,
-		Memory: &sysinfo.Memory{TotalMiB: 32000, FreeMiB: 7700, CommitLimitMiB: 54000, CommitFreeMiB: 11000}}
+	system := System{Started: time.Date(2026, 10, 11, 9, 0, 0, 0, time.UTC), Paused: f.paused,
+		Memory: &sysinfo.Memory{TotalMiB: 32000, FreeMiB: 7700, CommitLimitMiB: 54000, CommitFreeMiB: 11000}, Problems: []Problem{}}
+	if !f.fixed["ccminer-tpfuemp"] {
+		system.Problems = append(system.Problems, Problem{Miner: "ccminer-tpfuemp", Reason: "the library libcurl.so.4 is missing. Install it with the package manager of your system.",
+			Package: "libcurl4", Command: "sudo apt-get install -y libcurl4"})
+	}
+	if !f.fixed["wildrig"] {
+		system.Problems = append(system.Problems, Problem{Miner: "wildrig", Reason: "the NVIDIA driver is too old for this program. Update the driver."})
+	}
+	return system
+}
+
+func (f *fakeBackend) FixProblem(ctx context.Context, miner string) error {
+	if miner != "ccminer-tpfuemp" {
+		return errors.New("hashsteer knows no way to install what " + miner + " lacks")
+	}
+	if f.fixed == nil {
+		f.fixed = map[string]bool{}
+	}
+	f.fixed[miner] = true
+	return nil
 }
 
 func (f *fakeBackend) SetPaused(paused bool) { f.paused = paused }

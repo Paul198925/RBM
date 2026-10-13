@@ -244,6 +244,8 @@ table.wallets { width: 100%; margin: 8px 0; }
 table.wallets td { padding: 4px 8px 4px 0; border: 0; background: none; }
 table.wallets th { padding: 2px 8px 2px 0; background: none; border: 0; }
 table.wallets input.wide { width: 100%; min-width: 260px; font-family: var(--mono); }
+.problem { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.problem code { font-size: 12px; color: var(--muted); }
 .sharedcard { margin: 0 0 18px; }
 .sharedcard .head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; padding: 8px 2px; cursor: pointer; user-select: none; }
 .sharedcard .head h2 { margin: 0; font-size: 17px; }

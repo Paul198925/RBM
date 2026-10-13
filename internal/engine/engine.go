@@ -150,7 +150,7 @@ type Engine struct {
 	// broken are the miner programs that cannot run on this machine, with
 	// what they lack. They are left out with all their algorithms until
 	// the engine is started anew or the watchdog is reset.
-	broken map[string]string
+	broken map[string]BrokenMiner
 
 	// what other goroutines may touch
 	mu         sync.Mutex
@@ -563,9 +563,9 @@ func (e *Engine) checkRun(g *group, now time.Time) {
 		// a program that lacks a library fails the same way on every
 		// algorithm: trying them one by one would take the better part
 		// of an hour and tell nothing new
-		if fatal, ok := r.miner.(interface{ Fatal() string }); ok && r.firstHash.IsZero() {
-			if why := fatal.Fatal(); why != "" {
-				e.breakMiner(r.def.Name, why)
+		if fatal, ok := r.miner.(interface{ Fatal() (string, string) }); ok && r.firstHash.IsZero() {
+			if why, needs := fatal.Fatal(); why != "" {
+				e.breakMiner(r.def.Name, why, needs)
 				return
 			}
 		}
@@ -610,15 +610,32 @@ func (e *Engine) checkRun(g *group, now time.Time) {
 
 // breakMiner takes a miner program out with all its algorithms, for every
 // group of devices.
-func (e *Engine) breakMiner(name, why string) {
+func (e *Engine) breakMiner(name, why, needs string) {
 	if e.broken == nil {
-		e.broken = map[string]string{}
+		e.broken = map[string]BrokenMiner{}
 	}
 	if _, known := e.broken[name]; known {
 		return
 	}
-	e.broken[name] = why
+	e.broken[name] = BrokenMiner{Miner: name, Reason: why, Needs: needs}
 	e.deps.Logf("%s cannot run on this machine: %s It is left out with all its algorithms until hashsteer is started again or the watchdog is reset.", name, why)
+}
+
+func (e *Engine) isBroken(name string) bool {
+	_, broken := e.broken[name]
+	return broken
+}
+
+// Mend lets a miner program back in that was taken out because it could
+// not run on this machine: what it lacked is said to be there now. It is
+// safe to call from any goroutine.
+func (e *Engine) Mend(name string) {
+	e.do(func() {
+		if e.isBroken(name) {
+			delete(e.broken, name)
+			e.deps.Logf("%s is let back in", name)
+		}
+	})
 }
 
 // dropMeasurement forgets the hashrate stored for a miner on an algorithm.
@@ -779,7 +796,7 @@ func (e *Engine) options(g *group, now time.Time) ([]option, error) {
 			continue
 		}
 		for _, a := range def.Algorithms {
-			if !e.fits(g, a) || !e.allowed(def, a.Name) || e.broken[def.Name] != "" {
+			if !e.fits(g, a) || !e.allowed(def, a.Name) || e.isBroken(def.Name) {
 				continue
 			}
 			offers := e.offersFor(a.Name, now)

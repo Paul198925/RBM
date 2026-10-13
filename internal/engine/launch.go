@@ -125,14 +125,15 @@ func (l *launched) Describe() string {
 
 // Fatal says why the program cannot run on this machine at all, where the
 // way it ended tells: a library or a driver it needs is missing. That holds
-// for every algorithm, not only for the one it was started with. It is
-// empty for a program that ended for another reason.
-func (l *launched) Fatal() string {
+// for every algorithm, not only for the one it was started with. needs
+// names what is missing where it can be installed. Both are empty for a
+// program that ended for another reason.
+func (l *launched) Fatal() (why, needs string) {
 	var exitErr interface{ ExitCode() int }
 	if err := l.process.ExitErr(); err != nil && errors.As(err, &exitErr) {
-		return failureHint(exitErr.ExitCode(), logTail(l.logPath))
+		return failureNeeds(exitErr.ExitCode(), logTail(l.logPath))
 	}
-	return ""
+	return "", ""
 }
 
 func (l *launched) ExitText() string {

@@ -52,6 +52,9 @@ type Backend interface {
 	UpdateInfo() UpdateInfo
 	CheckUpdate(ctx context.Context) error
 	InstallUpdate(ctx context.Context) error
+	// FixProblem installs what the miner program of that name lacks, as
+	// System lists it under Problems, and lets the miner back in.
+	FixProblem(ctx context.Context, miner string) error
 	// Shared lists the hashrates measured on other machines; RefreshShared
 	// exchanges them with the share server now.
 	Shared() (SharedInfo, error)
@@ -84,6 +87,20 @@ type System struct {
 	// Notices say what is missing on this machine, e.g. the driver of
 	// the graphics cards.
 	Notices []string `json:"notices"`
+	// Problems are the miner programs that cannot run on this machine,
+	// with what would fix that.
+	Problems []Problem `json:"problems"`
+}
+
+// Problem is a miner program that cannot run because the system lacks
+// something.
+type Problem struct {
+	Miner  string `json:"miner"`
+	Reason string `json:"reason"`
+	// Package and Command say what hashsteer would install, and how, if
+	// asked to. Both are empty where it does not know a way.
+	Package string `json:"package,omitempty"`
+	Command string `json:"command,omitempty"`
 }
 
 // DeviceStatus is a device with what it reports about itself right now.
@@ -343,6 +360,21 @@ func Handler(b Backend) http.Handler {
 			return
 		}
 		writeJSON(w, b.UpdateInfo())
+	})
+	mux.HandleFunc("POST /api/problems/fix", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Miner string `json:"miner"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<10)).Decode(&req); err != nil || req.Miner == "" {
+			writeError(w, http.StatusBadRequest, "name the miner program whose problem is to be fixed")
+			return
+		}
+		// the request may end before the installation does; that goes on
+		if err := b.FixProblem(context.WithoutCancel(r.Context()), req.Miner); err != nil {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 	})
 	mux.HandleFunc("POST /api/watchdog/reset", func(w http.ResponseWriter, r *http.Request) {
 		b.ResetWatchdog()

@@ -14,7 +14,12 @@ type fatalMiner struct {
 	why string
 }
 
-func (f fatalMiner) Fatal() string { return f.why }
+func (f fatalMiner) Fatal() (string, string) {
+	if f.why == "" {
+		return "", ""
+	}
+	return f.why, "libcurl.so.4"
+}
 
 // A miner program that lacks a library fails the same way on every
 // algorithm. It is taken out at once and as a whole, not algorithm by
@@ -39,7 +44,7 @@ func TestAMinerThatCannotStartIsTakenOutAsAWhole(t *testing.T) {
 		t.Fatalf("it was started %d times: %v", len(s.launches), s.launches)
 	}
 	status := s.engine.Status()
-	if len(status.Broken) != 1 || status.Broken[0].Miner != "rigel" || status.Broken[0].Reason != why {
+	if len(status.Broken) != 1 || status.Broken[0].Miner != "rigel" || status.Broken[0].Reason != why || status.Broken[0].Needs != "libcurl.so.4" {
 		t.Fatalf("broken = %+v", status.Broken)
 	}
 	if status.Groups[0].State != "idle" || len(status.Groups[0].Disabled) != 0 {
@@ -71,9 +76,9 @@ func TestAMinerThatCannotStartIsTakenOutAsAWhole(t *testing.T) {
 		t.Errorf("tried again by itself: %v", s.launches)
 	}
 
-	// the library is installed and the watchdog reset: it gets its chance
+	// the library is installed and the miner let back in: it gets its chance
 	broken = false
-	s.engine.ResetWatchdog()
+	s.engine.Mend("rigel")
 	s.advance(10 * time.Minute)
 	if len(s.launches) < 2 || len(s.engine.Status().Broken) != 0 {
 		t.Errorf("after the reset: launches %v, broken %+v", s.launches, s.engine.Status().Broken)

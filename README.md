@@ -133,7 +133,7 @@ The [releases](https://github.com/Paul198925/hashsteer/releases) have the progra
 
 The NVIDIA driver, with `nvidia-smi` working. `hashsteer devices` lists what is found. AMD and Intel cards are not supported.
 
-hashsteer says so at the start and in the web interface if the driver is missing. A miner program that cannot start because something is missing on the system, such as the Visual C++ runtime on Windows or a library on Linux, fails its benchmark; the reason and what to install are shown with it on the Benchmarks and Watchdog pages. hashsteer installs nothing on the system by itself.
+hashsteer says so at the start and in the web interface if the driver is missing. A miner program that cannot start because the system lacks something, such as the Visual C++ runtime on Windows or a library on Linux, is taken out with all its algorithms, and the reason stands at the top of every page. Where hashsteer knows the package that holds what is missing, it asks there whether to install it, and shows the command: with the system's package manager on Linux (apt-get, dnf, pacman or zypper), with winget on Windows. It installs only after you click yes. On Linux that takes `sudo` without a password; where `sudo` asks for one, hashsteer says so and you run the command it shows in a terminal. On Windows the system may ask on the desktop whether to allow it. Nothing is installed without being asked for.
 
 ## Use
 

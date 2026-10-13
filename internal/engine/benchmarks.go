@@ -129,9 +129,9 @@ func (e *Engine) listBenchmarks(now time.Time) error {
 					b.Status = BenchExcluded
 				case !e.fits(g, a):
 					b.Status = BenchNoFit
-				case e.broken[def.Name] != "":
+				case e.isBroken(def.Name):
 					b.Status = BenchFailed
-					b.FailReason = "the miner program cannot run on this machine: " + e.broken[def.Name]
+					b.FailReason = "the miner program cannot run on this machine: " + e.broken[def.Name].Reason
 				case failed && e.failures[hashKey].gaveUp():
 					b.Status = BenchGaveUp
 					b.FailReason = g.reasons[hashKey]

@@ -880,6 +880,32 @@ function renderShared() {
     cards.length ? cards.map(block) : h('div', { class: 'empty' }, info.entries.length ? 'Nothing matches.' : 'No shared hashrates are known.'));
 }
 
+// problemLine says that a miner program cannot run, and offers to install
+// what it lacks where hashsteer knows how.
+function problemLine(p) {
+  const busy = state.fixing === p.miner;
+  return h('div', { class: 'problem' },
+    h('span', {}, p.miner + ' cannot run on this machine: ' + p.reason),
+    p.command ? [h('span', {}, ' Install ' + p.package + ' now?'),
+      h('button', { class: 'small', disabled: Boolean(state.fixing), title: 'Runs: ' + p.command, onclick: () => fixProblem(p) }, busy ? 'Installing ...' : 'Yes, install'),
+      h('code', {}, p.command)] : null);
+}
+
+async function fixProblem(p) {
+  if (!confirm('Install ' + p.package + ' on this machine?\n\nhashsteer runs:\n' + p.command + '\n\nThis changes the system. On Linux it needs sudo to work without a password; on Windows the system may ask on the desktop whether to allow it.')) return;
+  state.fixing = p.miner;
+  render();
+  try {
+    await api('/api/problems/fix', { method: 'POST', body: { miner: p.miner } });
+    toast(p.package + ' is installed, ' + p.miner + ' is tried again');
+  } catch (e) {
+    alert(e.message);
+  }
+  state.fixing = '';
+  await refreshStatus();
+  render();
+}
+
 async function refreshShared() {
   try {
     await api('/api/shared/refresh', { method: 'POST' });
@@ -1386,8 +1412,9 @@ async function refreshStatus() {
   const banner = document.getElementById('banner');
   const notices = (state.status.system.notices || []).slice();
   if (state.status.waiting) notices.unshift('Not mining: ' + state.status.waiting);
-  banner.hidden = notices.length === 0;
-  banner.replaceChildren(...notices.map(text => h('div', {}, text)));
+  const problems = state.status.system.problems || [];
+  banner.hidden = notices.length === 0 && problems.length === 0;
+  banner.replaceChildren(...notices.map(text => h('div', {}, text)), ...problems.map(problemLine));
   renderTopbar();
   await loadUpdate(false);
 

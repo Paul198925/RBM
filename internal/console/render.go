@@ -198,6 +198,12 @@ func Render(s Snapshot, width, height int, colour bool) []string {
 	for _, notice := range s.System.Notices {
 		add(p.in(yellow, notice))
 	}
+	for _, problem := range s.System.Problems {
+		add(p.in(yellow, problem.Miner+" cannot run on this machine: "+problem.Reason))
+		if problem.Command != "" {
+			add(p.in(yellow, "  The web interface offers to install "+problem.Package+", or run: "+problem.Command))
+		}
+	}
 	if s.Waiting != "" {
 		add(p.in(red, "Not mining: "+s.Waiting))
 	}
