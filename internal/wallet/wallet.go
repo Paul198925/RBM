@@ -23,6 +23,9 @@ type Balance struct {
 	// block yet. Not every explorer tells the latter.
 	Balance float64 `json:"balance"`
 	Pending float64 `json:"pending"`
+	// ValueBTC is what Balance is worth in bitcoin, 0 if the price of the
+	// coin is not known.
+	ValueBTC float64 `json:"value_btc"`
 	// Explorer is the host that was asked.
 	Explorer string    `json:"explorer"`
 	Updated  time.Time `json:"updated"`
@@ -36,20 +39,23 @@ type explorer struct {
 	base string
 	// unit is how many of its smallest units make one coin
 	unit float64
+	// priceID is the name of the coin at CoinGecko, for what it is worth.
+	// Empty for Bitcoin, which is what the worth is told in.
+	priceID string
 }
 
 // The explorers, by coin symbol. All of them answer without an account or
 // a key. A coin that is not listed has no balance shown.
 var explorers = map[string]explorer{
-	"BTC":  {"esplora", "https://mempool.space/api", 1e8},
-	"LTC":  {"esplora", "https://litecoinspace.org/api", 1e8},
-	"MEWC": {"esplora", "https://explorer.mewccrypto.com/api", 1e8},
-	"DOGE": {"blockcypher", "https://api.blockcypher.com/v1/doge/main", 1e8},
-	"RVN":  {"blockbook", "https://blockbook.ravencoin.org/api/v2", 1e8},
-	"XNA":  {"blockbook", "https://blockbook.neurai.org/api/v2", 1e8},
-	"ETC":  {"blockscout", "https://etc.blockscout.com/api/v2", 1e18},
-	"ERG":  {"ergo", "https://api.ergoplatform.com/api/v1", 1e9},
-	"FIRO": {"insight", "https://explorer.firo.org/insight-api-zcoin", 1e8},
+	"BTC":  {"esplora", "https://mempool.space/api", 1e8, ""},
+	"LTC":  {"esplora", "https://litecoinspace.org/api", 1e8, "litecoin"},
+	"MEWC": {"esplora", "https://explorer.mewccrypto.com/api", 1e8, "meowcoin"},
+	"DOGE": {"blockcypher", "https://api.blockcypher.com/v1/doge/main", 1e8, "dogecoin"},
+	"RVN":  {"blockbook", "https://blockbook.ravencoin.org/api/v2", 1e8, "ravencoin"},
+	"XNA":  {"blockbook", "https://blockbook.neurai.org/api/v2", 1e8, "neurai"},
+	"ETC":  {"blockscout", "https://etc.blockscout.com/api/v2", 1e18, "ethereum-classic"},
+	"ERG":  {"ergo", "https://api.ergoplatform.com/api/v1", 1e9, "ergo"},
+	"FIRO": {"insight", "https://explorer.firo.org/insight-api-zcoin", 1e8, "zcoin"},
 }
 
 // Supported lists the coins whose balances can be asked for.
@@ -61,6 +67,10 @@ func Supported() []string {
 	sort.Strings(coins)
 	return coins
 }
+
+// PriceID returns the name of a coin at CoinGecko, where prices are asked
+// for. It is empty for Bitcoin and for coins without a known explorer.
+func PriceID(currency string) string { return explorers[strings.ToUpper(currency)].priceID }
 
 // Known reports whether the balance of a coin can be asked for.
 func Known(currency string) bool {

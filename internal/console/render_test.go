@@ -40,7 +40,7 @@ func sample() Snapshot {
 			{Device: device.Device{ID: "CPU#00", Model: "Ryzen 5"}},
 		},
 		Balances: api.BalanceInfo{Balances: []pool.Balance{{Pool: "zpool", Currency: "BTC", Balance: 0.0001, Unpaid: 0.00012, Paid24h: 0}},
-			Wallets: []wallet.Balance{{Currency: "RVN", Address: "RDemoWalletAddressForTheInterface01", Balance: 1840.5, Pending: 56.68}}},
+			Wallets: []wallet.Balance{{Currency: "RVN", Address: "RDemoWalletAddressForTheInterface01", Balance: 1840.5, Pending: 56.68, ValueBTC: 0.0004}}},
 		Benchmarks: []engine.BenchmarkStatus{
 			{Group: "RTX 3060", Status: engine.BenchPending},
 			{Group: "RTX 3060", Status: engine.BenchPending},
@@ -68,7 +68,7 @@ func TestRenderShowsWhatMatters(t *testing.T) {
 		"CPU: idle - nothing pays more than the power costs",
 		"3 benchmarks are open, about 10m to go.",
 		"84 °C", "0.00012 BTC",
-		"RVN   RDemoWa...face01  1840.5 RVN    56.68 RVN",
+		"RVN   RDemoWa...face01  1840.5 RVN  40.00 EUR    56.68 RVN",
 		"[P] pause   [Q] quit",
 	} {
 		if !strings.Contains(text, want) {

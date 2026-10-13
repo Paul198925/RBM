@@ -311,9 +311,13 @@ func Render(s Snapshot, width, height int, colour bool) []string {
 			if w.Pending != 0 {
 				pending = coins(w.Pending, w.Currency)
 			}
-			rows = append(rows, []string{w.Currency, short(w.Address), coins(w.Balance, w.Currency), pending})
+			worth := ""
+			if w.ValueBTC > 0 && s.Status.BTCPrice > 0 {
+				worth = fmt.Sprintf("%.2f %s", w.ValueBTC*s.Status.BTCPrice, s.Status.Currency)
+			}
+			rows = append(rows, []string{w.Currency, short(w.Address), coins(w.Balance, w.Currency), worth, pending})
 		}
-		out := table([]string{"Coin", "Address", "Balance", "Unconfirmed"}, map[int]bool{2: true, 3: true}, rows)
+		out := table([]string{"Coin", "Address", "Balance", "Worth", "Unconfirmed"}, map[int]bool{2: true, 3: true, 4: true}, rows)
 		add(p.in(dim, out[0]))
 		add(out[1:]...)
 	}

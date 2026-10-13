@@ -23,6 +23,13 @@ func TestWalletBalancesAreAskedFor(t *testing.T) {
 		return wallet.Balance{Currency: currency, Address: address, Balance: float64(len(asked))}, nil
 	}
 
+	app.walletPriceFn = func(_ context.Context, ids []string) (map[string]float64, error) {
+		if strings.Join(ids, " ") != "ravencoin" {
+			t.Errorf("prices asked for %v", ids)
+		}
+		return map[string]float64{"ravencoin": 0.0000002}, nil
+	}
+
 	// no wallet, nobody is asked
 	app.readWallets(ctx)
 	if b := app.Balances(); len(asked) != 0 || b.Wallets == nil || len(b.Wallets) != 0 {
@@ -40,6 +47,10 @@ func TestWalletBalancesAreAskedFor(t *testing.T) {
 	b := app.Balances()
 	if len(b.Wallets) != 2 || b.Wallets[0].Currency != "BTC" || b.Wallets[1].Balance != 2 || b.WalletError != "" {
 		t.Fatalf("wallets %+v, error %q", b.Wallets, b.WalletError)
+	}
+	// bitcoin is worth itself, the others what their price says
+	if b.Wallets[0].ValueBTC != 1 || b.Wallets[1].ValueBTC != 2*0.0000002 {
+		t.Errorf("worth: %v and %v BTC", b.Wallets[0].ValueBTC, b.Wallets[1].ValueBTC)
 	}
 
 	// later they are asked again; a failure keeps the old figures

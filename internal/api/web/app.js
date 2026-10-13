@@ -369,6 +369,7 @@ function walletCards() {
       h('h3', {}, w.currency + ' wallet'),
       h('div', { class: 'main' }, fmtCoin(w.balance, w.currency)),
       h('dl', {},
+        h('dt', {}, 'Worth'), h('dd', {}, fiat(w.value_btc) || '-'),
         h('dt', {}, 'Address'), h('dd', {}, w.address.length > 12 ? w.address.slice(0, 5) + '...' + w.address.slice(-4) : w.address),
         h('dt', {}, 'Unconfirmed'), h('dd', {}, w.pending ? fmtCoin(w.pending, w.currency) : '-'),
         h('dt', {}, 'Updated'), h('dd', {}, fmtAgo(w.updated) ? fmtAgo(w.updated) + ' ago' : '-')))))];

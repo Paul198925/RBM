@@ -73,6 +73,9 @@ type App struct {
 	// walletFn asks a block explorer what an address holds, nil to ask
 	// none
 	walletFn func(ctx context.Context, currency, address string) (wallet.Balance, error)
+	// walletPriceFn asks what coins cost in bitcoin, by their names at
+	// CoinGecko; nil leaves the wallets without a worth
+	walletPriceFn func(ctx context.Context, ids []string) (map[string]float64, error)
 	// what coins cost, for the pools that pay in the mined coin
 	coinPrices rates.CoinGecko
 
@@ -120,7 +123,7 @@ func NewApp(ctx context.Context, configDir string, out io.Writer) (*App, error) 
 		notices = append(notices, problem)
 		fmt.Fprintln(out, problem)
 	}
-	return &App{
+	app := &App{
 		notices:     notices,
 		checker:     &update.Checker{},
 		swapIn:      update.SwapIn,
@@ -139,7 +142,9 @@ func NewApp(ctx context.Context, configDir string, out io.Writer) (*App, error) 
 		walletFn: (&wallet.Reader{}).Balance,
 		cfg:      cfg,
 		waiting:  "starting",
-	}, nil
+	}
+	app.walletPriceFn = app.coinPrices.InBTC
+	return app, nil
 }
 
 // logf writes a line to the console and keeps it for the interface.
@@ -447,9 +452,39 @@ func (a *App) readWallets(ctx context.Context) {
 		}
 		balances = append(balances, balance)
 	}
+	a.valueWallets(ctx, balances)
 	a.mu.Lock()
 	a.wallets, a.walletError, a.walletKey, a.walletAt = balances, strings.Join(failed, "; "), key, time.Now()
 	a.mu.Unlock()
+}
+
+// valueWallets says what the balances are worth in bitcoin. Without a price
+// a balance stays without a worth; that is no reason to show an error.
+func (a *App) valueWallets(ctx context.Context, balances []wallet.Balance) {
+	var ids []string
+	for _, b := range balances {
+		if id := wallet.PriceID(b.Currency); id != "" && !slices.Contains(ids, id) {
+			ids = append(ids, id)
+		}
+	}
+	prices := map[string]float64{}
+	if len(ids) > 0 && a.walletPriceFn != nil {
+		callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		if found, err := a.walletPriceFn(callCtx, ids); err == nil {
+			prices = found
+		}
+		cancel()
+	}
+	for i, b := range balances {
+		switch {
+		case b.Currency == "BTC":
+			balances[i].ValueBTC = b.Balance
+		case prices[wallet.PriceID(b.Currency)] > 0:
+			balances[i].ValueBTC = b.Balance * prices[wallet.PriceID(b.Currency)]
+		default:
+			// an old figure with an old worth keeps it
+		}
+	}
 }
 
 // cycle runs the engine with the current configuration until that changes
