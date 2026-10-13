@@ -244,6 +244,14 @@ table.wallets { width: 100%; margin: 8px 0; }
 table.wallets td { padding: 4px 8px 4px 0; border: 0; background: none; }
 table.wallets th { padding: 2px 8px 2px 0; background: none; border: 0; }
 table.wallets input.wide { width: 100%; min-width: 260px; font-family: var(--mono); }
+pre.term { margin: 0 0 8px; padding: 14px 16px; overflow-x: auto; font: 13px/1.45 var(--mono); color: #d7dde5; background: #0b0e12; border: 1px solid var(--line); border-radius: 8px; }
+pre.term div { white-space: pre; min-height: 1.45em; }
+pre.term .b { font-weight: 700; color: #f2f5f8; }
+pre.term .dim { color: #8a95a3; }
+pre.term .red { color: #ff7b72; }
+pre.term .green { color: #56d364; }
+pre.term .yellow { color: #e3b341; }
+pre.term .cyan { color: #56c8d8; }
 .problem { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
 .problem code { font-size: 12px; color: var(--muted); }
 .sharedcard { margin: 0 0 18px; }

@@ -79,6 +79,25 @@ func (f *fakeBackend) System() System {
 	return system
 }
 
+func (f *fakeBackend) Console() []string {
+	return []string{
+		"\x1b[1m\x1b[36mhashsteer vtest   worker hashsteer   up 1d 3h\x1b[0m",
+		"\x1b[2mweb interface: http://127.0.0.1:4000/\x1b[0m",
+		"",
+		"\x1b[32mProfit 0.00000194 BTC/day = 0.14 EUR/day   Power 358 W   1 BTC = 74177 EUR\x1b[0m",
+		"",
+		"\x1b[1mRUNNING MINERS\x1b[0m",
+		"\x1b[2mDevices       Miner    Algorithm  Pool   Coin        Speed  Power       BTC/day  Acc/Rej  Active\x1b[0m",
+		"RTX3060       rigel    kawpow     zpool  CLORE  19.93 MH/s  170 W    0.00000194     41/1  1h 23m",
+		"RTX2080SUPER  wildrig  meowpow    zpool  MEWC   21.48 MH/s  188 W  benchmarking      0/0      2m",
+		"\x1b[33m1 benchmarks are open, about 2m to go.\x1b[0m",
+		"",
+		"\x1b[1mDEVICES\x1b[0m",
+		"\x1b[33mGPU#00  GeForce RTX 3060  84 °C  73 %  170 W  100 %\x1b[0m",
+		"<b>not markup</b> & shown as it is",
+	}
+}
+
 func (f *fakeBackend) FixProblem(ctx context.Context, miner string) error {
 	if miner != "ccminer-tpfuemp" {
 		return errors.New("hashsteer knows no way to install what " + miner + " lacks")

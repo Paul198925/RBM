@@ -74,6 +74,9 @@ type Backend interface {
 	// Totals sums up the recorded miner runs per pool.
 	Totals() ([]stats.Total, error)
 	Log() []string
+	// Console returns the dashboard of the console window as lines of
+	// text, with the terminal's codes for its colours in them.
+	Console() []string
 	MinerLogs() ([]LogFile, error)
 	MinerLog(name string) (string, error)
 }
@@ -449,6 +452,13 @@ func Handler(b Backend) http.Handler {
 		out.Flush()
 	})
 
+	mux.HandleFunc("GET /api/console", func(w http.ResponseWriter, r *http.Request) {
+		lines := b.Console()
+		if lines == nil {
+			lines = []string{}
+		}
+		writeJSON(w, lines)
+	})
 	mux.HandleFunc("GET /api/log", func(w http.ResponseWriter, r *http.Request) {
 		lines := b.Log()
 		if lines == nil {

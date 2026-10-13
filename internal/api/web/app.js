@@ -1355,14 +1355,42 @@ async function saveConfig() {
 
 // --------------------------------------------------------------- console
 
+// The colours of the console window, by the code a terminal knows them by.
+const TERM_STYLES = { 1: 'b', 2: 'dim', 31: 'red', 32: 'green', 33: 'yellow', 36: 'cyan' };
+
+// termLine turns a line of the console window into elements: its text as
+// text, the terminal's colour codes as classes. Nothing in it is taken for
+// markup.
+function termLine(line) {
+  const parts = [];
+  let classes = [];
+  const pattern = /\x1b\[([0-9;]*)m/g;
+  let at = 0;
+  const push = text => { if (text) parts.push(classes.length ? h('span', { class: classes.join(' ') }, text) : text); };
+  for (let m = pattern.exec(line); m; m = pattern.exec(line)) {
+    push(line.slice(at, m.index));
+    at = pattern.lastIndex;
+    for (const code of (m[1] || '0').split(';')) {
+      if (Number(code) === 0) classes = [];
+      else if (TERM_STYLES[Number(code)]) classes = classes.concat(TERM_STYLES[Number(code)]);
+    }
+  }
+  push(line.slice(at));
+  return h('div', {}, parts.length ? parts : ' ');
+}
+
 function renderConsole() {
+  const lines = state.consoleLines || [];
+  const term = h('pre', { class: 'term' }, lines.length ? lines.map(termLine) : 'The console window has nothing to show yet.');
   const engineLog = h('pre', { class: 'log', id: 'engine-log' }, state.log.join('\n') || 'Nothing logged yet.');
   const select = h('select', { onchange: e => loadMinerLog(e.target.value) },
     h('option', { value: '' }, state.minerLogs.length ? 'Choose a miner log ...' : 'No miner logs yet'),
     state.minerLogs.map(f => h('option', { value: f.name, selected: f.name === state.minerLog.name },
       f.name + '   (' + Math.max(1, Math.round(f.size / 1024)) + ' kB)')));
   const out = h('div', {}, h('h1', {}, 'Console'),
-    h('h2', { class: 'first' }, 'hashsteer'), engineLog,
+    h('p', { class: 'lead' }, 'What the window shows that hashsteer runs in, redrawn every few seconds. The whole log and the logs of the miner programs are below.'),
+    term,
+    h('h2', {}, 'Log'), engineLog,
     h('h2', {}, 'Miner programs'),
     h('div', { class: 'toolbar' }, select,
       h('button', { onclick: () => loadMinerLog(state.minerLog.name), disabled: !state.minerLog.name }, 'Reload')),
@@ -1394,9 +1422,9 @@ const VIEWS = {
 const NEEDS = {
   dashboard: ['devices', 'balances', 'benchmarks'], devices: ['devices'],
   bestpools: ['offers'], allpools: ['offers'], earnings: ['balances'], payouts: ['balances'], totals: ['totals'],
-  benchmarks: ['benchmarks'], activity: ['activity'], shared: ['shared', 'offers'], console: ['log', 'minerlogs'],
+  benchmarks: ['benchmarks'], activity: ['activity'], shared: ['shared', 'offers'], console: ['console', 'log', 'minerlogs'],
 };
-const SOURCES = { devices: 'devices', balances: 'balances', offers: 'offers', totals: 'totals', benchmarks: 'benchmarks', activity: 'activity', shared: 'shared', log: 'log', minerlogs: 'minerLogs' };
+const SOURCES = { console: 'consoleLines', devices: 'devices', balances: 'balances', offers: 'offers', totals: 'totals', benchmarks: 'benchmarks', activity: 'activity', shared: 'shared', log: 'log', minerlogs: 'minerLogs' };
 
 async function refreshStatus() {
   const conn = document.getElementById('conn');
