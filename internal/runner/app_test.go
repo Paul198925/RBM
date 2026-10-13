@@ -239,7 +239,7 @@ func TestMetaListsTheMiners(t *testing.T) {
 			t.Errorf("miner = %+v", m)
 		}
 	}
-	if strings.Join(names, " ") != "bzminer ccminer-tpfuemp cpuminer-opt gminer lolminer rigel srbminer srbminer-cpu trex trex19 wildrig xmrig" || !filepath.IsAbs(meta.ConfigDir) || len(meta.Regions) != 4 {
+	if strings.Join(names, " ") != "bzminer ccminer-tpfuemp cpuminer-opt gminer lolminer rigel srbminer srbminer-cpu trex trex19 wildrig xmrig xmrig-mo" || !filepath.IsAbs(meta.ConfigDir) || len(meta.Regions) != 4 {
 		t.Errorf("meta = %+v", meta)
 	}
 	if meta.Currencies == nil {

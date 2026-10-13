@@ -1,0 +1,60 @@
+# XMRig as MoneroOcean builds it: https://github.com/MoneroOcean/xmrig
+# It measures the CPU on every algorithm the pool has a coin for and tells
+# the pool, which then hands it the work that pays best and switches by
+# itself. It only makes sense at that pool.
+name: xmrig-mo
+version: 6.26.0-mo5
+api: xmrig-mo
+vendor: CPU
+# XMRig cannot be set below a donation of 1%
+fee: 1.0
+
+downloads:
+  windows:
+    url: https://github.com/MoneroOcean/xmrig/releases/download/v6.26.0-mo5/xmrig-v6.26.0-mo5-win.zip
+    sha256: 86c602dd5c2b91ea715b6d42ad0743c6bc410e6316506dc25ca936cf9768fc7c
+    executable: xmrig.exe
+  linux:
+    url: https://github.com/MoneroOcean/xmrig/releases/download/v6.26.0-mo5/xmrig-v6.26.0-mo5-lin.tar.gz
+    sha256: f239de5dc1f659a3215eaab42d3c22ecdcc9b3584a0e27692e82dd96f7ab38fa
+    executable: xmrig
+
+# The program keeps what it measured in its configuration file, and only
+# if it was started with one. Without it the measuring, ten seconds per
+# algorithm, would be done again at every start. What is given on the
+# command line counts before what the file says.
+seed_files:
+  - name: hashsteer-mo.json
+    content: '{"autosave": true}'
+
+args:
+  - -c
+  - hashsteer-mo.json
+  - -o
+  - "{scheme}://{host}:{port}"
+  - -u
+  - "{user}"
+  - -p
+  - "{pass}"
+  - --http-host
+  - 127.0.0.1
+  - --http-port
+  - "{api_port}"
+  - --donate-level
+  - "1"
+  - --no-color
+
+# added when the number of threads is limited in the configuration
+threads_args:
+  - -t
+  - "{threads}"
+
+scheme: stratum+tcp
+scheme_tls: stratum+ssl
+
+algorithms:
+  # not an algorithm but the pool's own switching between them. The
+  # hashrate is told in hashes of Monero's algorithm that earn the same.
+  # The first start measures all algorithms before it mines.
+  - name: moneroocean
+    startup_minutes: 15

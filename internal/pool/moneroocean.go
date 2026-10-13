@@ -25,13 +25,17 @@ const (
 	moneroAtomic = 1e12
 )
 
+// MoneroOceanSwitching is the name of what is no algorithm: the pool
+// switching between its coins by itself.
+const MoneroOceanSwitching = "moneroocean"
+
 // MoneroOceanRegions lists where the pool runs stratum servers: one
 // address that leads to the nearest.
 var MoneroOceanRegions = []string{"global"}
 
 // The pool mines many coins and pays all of them in Monero. A miner that
-// does not tell it how fast it is on each algorithm gets Monero's own:
-// that is the one offered here, for the CPU.
+// does not tell it how fast it is on each algorithm gets Monero's own;
+// one that does is handed what pays best. Both are offered, for the CPU.
 var moneroOceanCoins = []poolCoin{
 	{CoinInfo: CoinInfo{"XMR", "Monero", "randomx"}, priceID: "monero"},
 }
@@ -90,7 +94,9 @@ func (m *MoneroOcean) get(ctx context.Context, path string, v any) error {
 
 type moneroOceanStats struct {
 	Pool struct {
-		Price struct {
+		HashRate flexFloat `json:"hashRate"`
+		Miners   flexFloat `json:"miners"`
+		Price    struct {
 			BTC flexFloat `json:"btc"`
 		} `json:"price"`
 		// by the port of the coin's own network, as text
@@ -152,7 +158,21 @@ func (m *MoneroOcean) Fetch(ctx context.Context) ([]Offer, error) {
 			offer.LastBlockSeconds = float64(now.Unix()) - last
 		}
 		offers = append(offers, offer)
+
+		// the pool's own switching between all its coins, for the miner
+		// program that tells it how fast the CPU is on each algorithm.
+		// That program reports its hashrate in hashes of Monero's
+		// algorithm that earn the same, so one of them pays what one
+		// of Monero's does.
+		switching := offer
+		switching.Algorithm, switching.PoolAlgorithm = MoneroOceanSwitching, ""
+		switching.Coin, switching.CoinName = "", ""
+		if total := float64(stats.Pool.HashRate); total > 0 {
+			switching.Hashrate, switching.Workers = total, int(stats.Pool.Miners)
+		}
+		offers = append(offers, switching)
 	}
+	sort.Slice(offers, func(i, j int) bool { return offers[i].Algorithm < offers[j].Algorithm })
 	return offers, nil
 }
 

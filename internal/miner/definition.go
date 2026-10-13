@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"slices"
@@ -44,6 +46,31 @@ type Definition struct {
 	// is not listed needs nothing special.
 	EthModes   map[string]EthMode `yaml:"eth_modes"`
 	Algorithms []Algorithm        `yaml:"algorithms"`
+	// SeedFiles are written next to the program before it is started,
+	// unless they are there already: for a program that keeps what it
+	// learns in a file and has to find one to do so.
+	SeedFiles []SeedFile `yaml:"seed_files"`
+}
+
+// SeedFile is a file a miner program has to find next to itself.
+type SeedFile struct {
+	Name    string `yaml:"name"`
+	Content string `yaml:"content"`
+}
+
+// Seed writes the seed files next to the program at exe that are not
+// there yet.
+func (d *Definition) Seed(exe string) error {
+	for _, f := range d.SeedFiles {
+		path := filepath.Join(filepath.Dir(exe), f.Name)
+		if _, err := os.Stat(path); err == nil {
+			continue
+		}
+		if err := os.WriteFile(path, []byte(f.Content), 0o644); err != nil {
+			return fmt.Errorf("%s: %w", d.Name, err)
+		}
+	}
+	return nil
 }
 
 // EthMode is how a miner is told to speak one stratum dialect.
@@ -162,6 +189,11 @@ func (d *Definition) validate() error {
 		probe.Algorithm = a
 		if _, err := d.BuildArgs(probe); err != nil {
 			return err
+		}
+	}
+	for _, f := range d.SeedFiles {
+		if f.Name == "" || strings.ContainsAny(f.Name, `/\`) || strings.HasPrefix(f.Name, ".") {
+			return fmt.Errorf("%s: seed file %q must be a plain file name", d.Name, f.Name)
 		}
 	}
 	if len(d.Downloads) == 0 {

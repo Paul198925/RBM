@@ -68,6 +68,10 @@ func Launch(ctx context.Context, spec LaunchSpec) (Miner, error) {
 		return nil, err
 	}
 
+	if err := def.Seed(exe); err != nil {
+		return nil, err
+	}
+
 	port := spec.Offer.Port
 	if spec.TLS {
 		if spec.Offer.TLSPort == 0 {

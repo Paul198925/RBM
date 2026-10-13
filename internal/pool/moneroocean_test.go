@@ -37,10 +37,16 @@ func moneroOceanStub(t *testing.T, replies map[string]string) *MoneroOcean {
 func TestMoneroOceanOffer(t *testing.T) {
 	m := moneroOceanStub(t, map[string]string{"/pool/stats": moneroOceanStatsDoc})
 	offers, err := m.Fetch(context.Background())
-	if err != nil || len(offers) != 1 {
+	if err != nil || len(offers) != 2 {
 		t.Fatalf("offers = %+v, %v", offers, err)
 	}
-	o := offers[0]
+	// the pool's own switching: paid like Monero's hashes, with no coin
+	// of its own, and the whole pool behind it
+	s, o := offers[0], offers[1]
+	if s.Algorithm != MoneroOceanSwitching || s.Coin != "" || s.Price != o.Price || s.Workers != 4675 || s.Hashrate < 2.3e8 ||
+		s.User != o.User || s.Pass != o.Pass || s.Port != o.Port {
+		t.Errorf("switching = %+v", s)
+	}
 	// what a hash per second earns in a day in XMR, at the pool's price of it
 	want := 7.233568427305283e-08 * 0.006335832188590185
 	if math.Abs(o.Price-want) > want*1e-9 {

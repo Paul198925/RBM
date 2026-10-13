@@ -27,9 +27,11 @@ It is written in Go, as one program without dependencies to install, for Windows
 | [zpool.ca](https://zpool.ca) | everything in one coin of your choice | whatever its algorithms mine; single coins can be chosen or left to the pool |
 | [2Miners](https://2miners.com) | the coin that is mined | BTG, ERG, ETC, ETHW, NEXA, RVN, XNA, ZEPH (CPU) |
 | [WoolyPooly](https://woolypooly.com) | the coin that is mined | ERG, ETC, ETHW, FIRO, MEWC, NEXA, OCTA, RTM (CPU), RVN, RXD, VTC, XNA |
-| [MoneroOcean](https://moneroocean.stream) | Monero | XMR, with the CPU |
+| [MoneroOcean](https://moneroocean.stream) | Monero | XMR with the CPU, or whatever the pool switches to |
 
 Wallets are kept in one list, one address per coin, and every pool uses the ones it can. 2Miners and WoolyPooly mine the coins that have a wallet, MoneroOcean needs the one for XMR; zpool pays to the wallet of its payout coin. **Setup Coins** lists every coin that can be mined as a single coin with what it still needs (a pool, a wallet, a miner program) and what it would earn right now, and has one switch per coin that holds for all pools. The dashboard also shows what has arrived at each wallet: for BTC, DOGE, ERG, ETC, FIRO, LTC, MEWC, RVN and XNA the address is looked up every ten minutes at a public block explorer of the coin. That can be switched off under **Setup Wallets**.
+
+MoneroOcean can be mined in two ways, and hashsteer measures both and takes the better. The ordinary XMRig mines Monero. The pool's own build of XMRig measures the CPU on every algorithm the pool has a coin for, tells the pool, and is then handed whatever pays best; the pool switches by itself. Its hashrate is shown in hashes of Monero's algorithm that earn the same, since a hash means something else on every algorithm.
 
 zpool and MoneroOcean report what they pay themselves. For the other two the figure is worked out from the coin's price (from CoinGecko), its block reward and the hashrate of its network, less the pool's fee. That is an expectation; what arrives depends on the pool's luck.
 
@@ -49,6 +51,7 @@ zpool and MoneroOcean report what they pay themselves. For the other two the fig
 | T-Rex | 0.19.14 | NVIDIA | 9 | Windows, Linux |
 | WildRig Multi | 0.51.4 | NVIDIA | 15 | Windows, Linux |
 | XMRig | 6.26.0 | CPU | 3 | Windows, Linux |
+| XMRig of MoneroOcean | 6.26.0-mo5 | CPU | the pool's switching | Windows, Linux |
 
 Together they cover what zpool.ca offers, except the algorithms that ASICs or FPGAs mine (sha256, scrypt, x11 and the like), where a graphics card earns next to nothing. Where several programs mine the same algorithm, all are measured and the fastest is used. Most of them are closed source and take a developer fee, which hashsteer counts in.
 

@@ -29,7 +29,7 @@ func TestAllBuiltinDefinitionsAreComplete(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := Names(defs); !reflect.DeepEqual(got, []string{"bzminer", "ccminer-tpfuemp", "cpuminer-opt", "gminer", "lolminer", "rigel", "srbminer", "srbminer-cpu", "trex", "trex19", "wildrig", "xmrig"}) {
+	if got := Names(defs); !reflect.DeepEqual(got, []string{"bzminer", "ccminer-tpfuemp", "cpuminer-opt", "gminer", "lolminer", "rigel", "srbminer", "srbminer-cpu", "trex", "trex19", "wildrig", "xmrig", "xmrig-mo"}) {
 		t.Errorf("definitions = %v", got)
 	}
 	// miners that do not exist for every system, on purpose
