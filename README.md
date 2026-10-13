@@ -218,7 +218,7 @@ Built from documentation and tested only with made-up data, or against the real 
 - 2Miners, WoolyPooly and MoneroOcean: what they pay is read from the real pools, but nothing was mined there
 - mining single coins at zpool
 - the wallet balances: fifteen of the sixteen sources were asked for real, with public addresses
-- everything on Linux: the program compiles and its tests pass there, but it has not mined on a Linux machine
+- mining on Linux. The release build starts there with `start.sh`, finds the graphics cards, serves the web interface and updates itself from one release to the next; that was run on Debian under WSL 2. No miner program was started on Linux, and the systemd service and Screen were not tried
 
 A miner program or algorithm that does not work fails its benchmark, waits, and is given up after the third failure; the rest goes on.
 
