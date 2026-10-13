@@ -218,7 +218,7 @@ Built from documentation and tested only with made-up data, or against the real 
 - 2Miners, WoolyPooly and MoneroOcean: what they pay is read from the real pools, but nothing was mined there
 - mining single coins at zpool
 - the wallet balances: fifteen of the sixteen sources were asked for real, with public addresses
-- mining on Linux. The release build starts there with `start.sh`, finds the graphics cards, serves the web interface and updates itself from one release to the next; that was run on Debian under WSL 2, also inside Screen, with its dashboard and keys, and under systemd: `install-service.sh` installs the service, it runs as the user and not as root, restarts, stops cleanly and is removed again; an update and a restart after the program was killed were run under it too. No miner program was started on Linux
+- most of Linux. The release build starts there with `start.sh`, finds the graphics cards, serves the web interface and updates itself; it runs inside Screen with its dashboard and keys, and under systemd, where `install-service.sh` installs and removes the service. That was run on Debian under WSL 2. Mining was run there too, but only SRBMiner-Multi mined (yescryptr16 on an RTX 3060, with shares accepted): the other miner programs lacked a library or could not use the card under WSL, which hashsteer said and handled. On a Linux installed on the machine itself nothing was run
 
 A miner program or algorithm that does not work fails its benchmark, waits, and is given up after the third failure; the rest goes on.
 
