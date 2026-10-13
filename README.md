@@ -27,10 +27,11 @@ It is written in Go, as one program without dependencies to install, for Windows
 | [zpool.ca](https://zpool.ca) | everything in one coin of your choice | whatever its algorithms mine; single coins can be chosen or left to the pool |
 | [2Miners](https://2miners.com) | the coin that is mined | BTG, ERG, ETC, ETHW, NEXA, RVN, XNA, ZEPH (CPU) |
 | [WoolyPooly](https://woolypooly.com) | the coin that is mined | ERG, ETC, ETHW, FIRO, MEWC, NEXA, OCTA, RTM (CPU), RVN, RXD, VTC, XNA |
+| [MoneroOcean](https://moneroocean.stream) | Monero | XMR, with the CPU |
 
-Wallets are kept in one list, one address per coin, and every pool uses the ones it can. 2Miners and WoolyPooly mine the coins that have a wallet; zpool pays to the wallet of its payout coin. **Setup Coins** lists every coin that can be mined as a single coin with what it still needs (a pool, a wallet, a miner program) and what it would earn right now, and has one switch per coin that holds for all pools. The dashboard also shows what has arrived at each wallet: for BTC, DOGE, ERG, ETC, FIRO, LTC, MEWC, RVN and XNA the address is looked up every ten minutes at a public block explorer of the coin. That can be switched off under **Setup Wallets**.
+Wallets are kept in one list, one address per coin, and every pool uses the ones it can. 2Miners and WoolyPooly mine the coins that have a wallet, MoneroOcean needs the one for XMR; zpool pays to the wallet of its payout coin. **Setup Coins** lists every coin that can be mined as a single coin with what it still needs (a pool, a wallet, a miner program) and what it would earn right now, and has one switch per coin that holds for all pools. The dashboard also shows what has arrived at each wallet: for BTC, DOGE, ERG, ETC, FIRO, LTC, MEWC, RVN and XNA the address is looked up every ten minutes at a public block explorer of the coin. That can be switched off under **Setup Wallets**.
 
-zpool reports what it pays itself. For the other two the figure is worked out from the coin's price (from CoinGecko), its block reward and the hashrate of its network, less the pool's fee. That is an expectation; what arrives depends on the pool's luck.
+zpool and MoneroOcean report what they pay themselves. For the other two the figure is worked out from the coin's price (from CoinGecko), its block reward and the hashrate of its network, less the pool's fee. That is an expectation; what arrives depends on the pool's luck.
 
 ## Miner programs
 
@@ -193,7 +194,7 @@ On Windows 11 with an RTX 3060 and an RTX 2080 SUPER, at zpool.ca:
 Built from documentation and tested only with made-up data, or against the real services without mining:
 
 - the other miner programs, and most algorithms of the ones above
-- 2Miners and WoolyPooly: what they pay is read from the real pools, but nothing was mined there
+- 2Miners, WoolyPooly and MoneroOcean: what they pay is read from the real pools, but nothing was mined there
 - mining single coins at zpool
 - the wallet balances: eight of the nine block explorers were asked for real, with public addresses
 - everything on Linux: the program compiles and its tests pass there, but it has not mined on a Linux machine

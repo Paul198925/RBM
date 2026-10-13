@@ -54,6 +54,7 @@ func CoinPools() []CoinPoolInfo {
 	return []CoinPoolInfo{
 		{Name: "2miners", Key: "twominers", Title: "2Miners", FeePercent: twoMinersFee, Regions: TwoMinersRegions, Coins: coinInfos(twoMinersCoins)},
 		{Name: "woolypooly", Key: "woolypooly", Title: "WoolyPooly", FeePercent: woolyPoolyFee, Regions: WoolyPoolyRegions, Coins: coinInfos(woolyPoolyCoins)},
+		{Name: "moneroocean", Key: "moneroocean", Title: "MoneroOcean", FeePercent: moneroOceanFee, Regions: MoneroOceanRegions, Coins: coinInfos(moneroOceanCoins)},
 	}
 }
 
@@ -64,6 +65,8 @@ func NewCoinPool(name string, s CoinPoolSettings) CoinPool {
 		return &TwoMiners{Wallets: s.Wallets, Worker: s.Worker, Region: s.Region, ExcludeCoins: s.ExcludeCoins, Prices: s.Prices}
 	case "woolypooly":
 		return &WoolyPooly{Wallets: s.Wallets, Worker: s.Worker, ExcludeCoins: s.ExcludeCoins, Prices: s.Prices}
+	case "moneroocean":
+		return &MoneroOcean{Wallets: s.Wallets, Worker: s.Worker, ExcludeCoins: s.ExcludeCoins}
 	}
 	return nil
 }
@@ -92,7 +95,7 @@ var payoutPriceIDs = map[string]string{
 // what prices are told in.
 func PriceID(symbol string) string {
 	symbol = strings.ToUpper(symbol)
-	for _, coins := range [][]poolCoin{twoMinersCoins, woolyPoolyCoins} {
+	for _, coins := range [][]poolCoin{twoMinersCoins, woolyPoolyCoins, moneroOceanCoins} {
 		for _, c := range coins {
 			if c.Symbol == symbol {
 				return c.priceID

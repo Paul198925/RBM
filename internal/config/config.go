@@ -148,6 +148,8 @@ type Pools struct {
 	Zpool        Zpool    `yaml:"zpool" json:"zpool"`
 	TwoMiners    CoinPool `yaml:"2miners" json:"twominers"`
 	WoolyPooly   CoinPool `yaml:"woolypooly" json:"woolypooly"`
+	// MoneroOcean mines Monero with the CPU and pays in it.
+	MoneroOcean CoinPool `yaml:"moneroocean" json:"moneroocean"`
 }
 
 // Wallets maps coin symbols like "RVN" to payout addresses.
@@ -190,12 +192,14 @@ func (p Pools) ZpoolReady() error {
 }
 
 // CoinPoolNames lists the coin pools, by the name their offers carry.
-var CoinPoolNames = []string{"2miners", "woolypooly"}
+var CoinPoolNames = []string{"2miners", "woolypooly", "moneroocean"}
 
 // CoinPoolRegions lists the regions each coin pool runs stratum servers in.
 var CoinPoolRegions = map[string][]string{
 	"2miners":    {"eu", "us", "asia"},
 	"woolypooly": {"eu"},
+	// one address that leads to the nearest server
+	"moneroocean": {"global"},
 }
 
 // CoinPool returns the settings of the coin pool of that name.
@@ -205,6 +209,8 @@ func (p *Pools) CoinPool(name string) *CoinPool {
 		return &p.TwoMiners
 	case "woolypooly":
 		return &p.WoolyPooly
+	case "moneroocean":
+		return &p.MoneroOcean
 	}
 	return nil
 }
@@ -315,8 +321,9 @@ func Default() *Config {
 				AlgoSwitching: true,
 				CoinMining:    true,
 			},
-			TwoMiners:  CoinPool{Region: "eu"},
-			WoolyPooly: CoinPool{Region: "eu"},
+			TwoMiners:   CoinPool{Region: "eu"},
+			WoolyPooly:  CoinPool{Region: "eu"},
+			MoneroOcean: CoinPool{Region: "global"},
 		},
 		Miners: Miners{},
 	}

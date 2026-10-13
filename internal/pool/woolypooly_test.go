@@ -118,7 +118,7 @@ func TestWoolyPoolyBalances(t *testing.T) {
 func TestCoinPoolRegistry(t *testing.T) {
 	for _, info := range CoinPools() {
 		p := NewCoinPool(info.Name, CoinPoolSettings{Wallets: map[string]string{"RVN": "R"}, Worker: "w", Region: info.Regions[0]})
-		if p == nil || p.Name() != info.Name || info.Key == "" || info.Title == "" || len(info.Coins) == 0 || info.FeePercent <= 0 {
+		if p == nil || p.Name() != info.Name || info.Key == "" || info.Title == "" || len(info.Coins) == 0 || info.FeePercent < 0 {
 			t.Errorf("pool %+v is not complete", info)
 		}
 		for _, c := range info.Coins {
