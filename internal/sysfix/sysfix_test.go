@@ -32,7 +32,12 @@ func TestFind(t *testing.T) {
 		// the first package manager that is there is the system's own
 		{with("linux", "dnf", "apt-get"), "libcurl.so.4", "sudo apt-get install -y libcurl4"},
 		{with("windows", "winget"), VCRedist, "winget install --id Microsoft.VCRedist.2015+.x64 -e --accept-package-agreements --accept-source-agreements --disable-interactivity"},
+		{with("windows", "winget"), "VCRUNTIME140_1.dll", "winget install --id Microsoft.VCRedist.2015+.x64 -e --accept-package-agreements --accept-source-agreements --disable-interactivity"},
+		{with("linux", "apt-get"), "libssl.so.3", "sudo apt-get install -y libssl3"},
+		{with("linux", "pacman"), "libgcc_s.so.1", "sudo pacman -S --noconfirm --needed gcc-libs"},
 		// nothing to offer
+		{with("linux", "apt-get"), "libcuda.so.1", ""},
+		{with("windows", "winget"), "nvcuda.dll", ""},
 		{with("linux", "apt-get"), "libunheardof.so.9", ""},
 		{with("linux"), "libcurl.so.4", ""},
 		{with("linux", "apt-get"), VCRedist, ""},

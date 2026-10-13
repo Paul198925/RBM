@@ -46,6 +46,10 @@ type Definition struct {
 	// is not listed needs nothing special.
 	EthModes   map[string]EthMode `yaml:"eth_modes"`
 	Algorithms []Algorithm        `yaml:"algorithms"`
+	// Requires lists what the program needs from the system beyond what
+	// every system has, by operating system (runtime.GOOS): the shared
+	// libraries it imports and does not bring along.
+	Requires map[string][]string `yaml:"requires"`
 	// SeedFiles are written next to the program before it is started,
 	// unless they are there already: for a program that keeps what it
 	// learns in a file and has to find one to do so.

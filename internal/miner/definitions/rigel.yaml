@@ -17,6 +17,12 @@ downloads:
     executable: rigel
 
 # one list entry per command line argument; {placeholders} are filled in
+# What the program needs from the system beyond what every system has: the
+# libraries it imports and does not bring along. Read from the downloads;
+# the test TestListDependencies checks it against them.
+requires:
+  linux: [libgcc_s.so.1]
+
 args:
   - --api-bind
   - 127.0.0.1:{api_port}

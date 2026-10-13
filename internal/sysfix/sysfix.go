@@ -32,16 +32,21 @@ type Fix struct {
 // manager. A library that is not listed has no fix: guessing a package name
 // would install something else.
 var packages = map[string]map[string]string{
-	"libcurl.so.4":     {"apt-get": "libcurl4", "dnf": "libcurl", "pacman": "curl", "zypper": "libcurl4"},
-	"libOpenCL.so.1":   {"apt-get": "ocl-icd-libopencl1", "dnf": "ocl-icd", "pacman": "ocl-icd", "zypper": "libOpenCL1"},
-	"libgomp.so.1":     {"apt-get": "libgomp1", "dnf": "libgomp", "pacman": "gcc-libs", "zypper": "libgomp1"},
-	"libjansson.so.4":  {"apt-get": "libjansson4", "dnf": "jansson", "pacman": "jansson", "zypper": "libjansson4"},
-	"libhwloc.so.15":   {"apt-get": "libhwloc15", "dnf": "hwloc-libs", "pacman": "hwloc", "zypper": "libhwloc15"},
-	"libnuma.so.1":     {"apt-get": "libnuma1", "dnf": "numactl-libs", "pacman": "numactl", "zypper": "libnuma1"},
-	"libuv.so.1":       {"apt-get": "libuv1", "dnf": "libuv", "pacman": "libuv", "zypper": "libuv1"},
-	"libstdc++.so.6":   {"apt-get": "libstdc++6", "dnf": "libstdc++", "pacman": "gcc-libs", "zypper": "libstdc++6"},
-	"libmicrohttpd.so": {"apt-get": "libmicrohttpd12", "dnf": "libmicrohttpd", "pacman": "libmicrohttpd", "zypper": "libmicrohttpd12"},
+	"libcurl.so.4":    {"apt-get": "libcurl4", "dnf": "libcurl", "pacman": "curl", "zypper": "libcurl4"},
+	"libOpenCL.so.1":  {"apt-get": "ocl-icd-libopencl1", "dnf": "ocl-icd", "pacman": "ocl-icd", "zypper": "libOpenCL1"},
+	"libgomp.so.1":    {"apt-get": "libgomp1", "dnf": "libgomp", "pacman": "gcc-libs", "zypper": "libgomp1"},
+	"libjansson.so.4": {"apt-get": "libjansson4", "dnf": "jansson", "pacman": "jansson", "zypper": "libjansson4"},
+	"libhwloc.so.15":  {"apt-get": "libhwloc15", "dnf": "hwloc-libs", "pacman": "hwloc", "zypper": "libhwloc15"},
+	"libnuma.so.1":    {"apt-get": "libnuma1", "dnf": "numactl-libs", "pacman": "numactl", "zypper": "libnuma1"},
+	"libuv.so.1":      {"apt-get": "libuv1", "dnf": "libuv", "pacman": "libuv", "zypper": "libuv1"},
+	"libstdc++.so.6":  {"apt-get": "libstdc++6", "dnf": "libstdc++", "pacman": "gcc-libs", "zypper": "libstdc++6"},
+	"libgcc_s.so.1":   {"apt-get": "libgcc-s1", "dnf": "libgcc", "pacman": "gcc-libs", "zypper": "libgcc_s1"},
+	"libssl.so.3":     {"apt-get": "libssl3", "dnf": "openssl-libs", "pacman": "openssl", "zypper": "libopenssl3"},
+	"libcrypto.so.3":  {"apt-get": "libssl3", "dnf": "openssl-libs", "pacman": "openssl", "zypper": "libopenssl3"},
 }
+
+// the libraries of the Visual C++ runtime, which come as one package
+var vcRuntime = map[string]bool{"vcruntime140.dll": true, "vcruntime140_1.dll": true, "msvcp140.dll": true, "msvcp140_1.dll": true, "concrt140.dll": true}
 
 // how each package manager installs a package without asking back
 var installs = map[string][]string{
@@ -88,7 +93,7 @@ func (s System) has(name string) bool {
 func (s System) Find(needs string) (Fix, bool) {
 	switch s.goos() {
 	case "windows":
-		if needs != VCRedist || !s.has("winget") {
+		if (needs != VCRedist && !vcRuntime[strings.ToLower(needs)]) || !s.has("winget") {
 			return Fix{}, false
 		}
 		argv := []string{"winget", "install", "--id", "Microsoft.VCRedist.2015+.x64", "-e",

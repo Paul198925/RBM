@@ -52,6 +52,11 @@ type Backend interface {
 	UpdateInfo() UpdateInfo
 	CheckUpdate(ctx context.Context) error
 	InstallUpdate(ctx context.Context) error
+	// Dependencies lists what the miner programs need from the system and
+	// whether it is there; InstallDependency installs the package for a
+	// library that is missing.
+	Dependencies() []Dependency
+	InstallDependency(ctx context.Context, library string) error
 	// FixProblem installs what the miner program of that name lacks, as
 	// System lists it under Problems, and lets the miner back in.
 	FixProblem(ctx context.Context, miner string) error
@@ -93,6 +98,27 @@ type System struct {
 	// Problems are the miner programs that cannot run on this machine,
 	// with what would fix that.
 	Problems []Problem `json:"problems"`
+}
+
+// Dependency is what one miner program needs from the system.
+type Dependency struct {
+	Miner   string `json:"miner"`
+	Version string `json:"version"`
+	Vendor  string `json:"vendor"`
+	// Needs is empty for a program that brings everything along.
+	Needs []Need `json:"needs"`
+}
+
+// Need is a library a miner program needs from the system.
+type Need struct {
+	Library string `json:"library"`
+	Present bool   `json:"present"`
+	// FromDriver says it comes with the driver of the graphics cards.
+	FromDriver bool `json:"from_driver,omitempty"`
+	// Package and Command say what hashsteer would install for a library
+	// that is missing, if asked to. Empty where it knows no way.
+	Package string `json:"package,omitempty"`
+	Command string `json:"command,omitempty"`
 }
 
 // Problem is a miner program that cannot run because the system lacks
@@ -363,6 +389,28 @@ func Handler(b Backend) http.Handler {
 			return
 		}
 		writeJSON(w, b.UpdateInfo())
+	})
+	mux.HandleFunc("GET /api/dependencies", func(w http.ResponseWriter, r *http.Request) {
+		list := b.Dependencies()
+		if list == nil {
+			list = []Dependency{}
+		}
+		writeJSON(w, list)
+	})
+	mux.HandleFunc("POST /api/dependencies/install", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Library string `json:"library"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<10)).Decode(&req); err != nil || req.Library == "" {
+			writeError(w, http.StatusBadRequest, "name the library that is to be installed")
+			return
+		}
+		// the request may end before the installation does; that goes on
+		if err := b.InstallDependency(context.WithoutCancel(r.Context()), req.Library); err != nil {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
+		writeJSON(w, b.Dependencies())
 	})
 	mux.HandleFunc("POST /api/problems/fix", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {

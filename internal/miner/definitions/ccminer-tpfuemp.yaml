@@ -16,6 +16,13 @@ downloads:
     sha256: d28a73874ca247a76046aa391d30ffbed7ba1782050f73ab1ec576da50d86f7d
     executable: ccminer
 
+# What the program needs from the system beyond what every system has: the
+# libraries it imports and does not bring along. Read from the downloads;
+# the test TestListDependencies checks it against them.
+requires:
+  windows: [nvcuda.dll, vcruntime140.dll, vcruntime140_1.dll]
+  linux: [libcrypto.so.3, libcuda.so.1, libcurl.so.4, libgcc_s.so.1, libgomp.so.1, libjansson.so.4, libstdc++.so.6]
+
 args:
   - -a
   - "{algo}"

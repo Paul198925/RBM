@@ -22,6 +22,13 @@ downloads:
     sha256: 456a273ad7c459a6b764b20b79ab8158a4cd9d6cd68d967dca0632a67df49023
     executable: t-rex
 
+# What the program needs from the system beyond what every system has: the
+# libraries it imports and does not bring along. Read from the downloads;
+# the test TestListDependencies checks it against them.
+requires:
+  windows: [msvcp140.dll, vcruntime140.dll]
+  linux: [libgcc_s.so.1, libstdc++.so.6]
+
 args:
   - -a
   - "{algo}"

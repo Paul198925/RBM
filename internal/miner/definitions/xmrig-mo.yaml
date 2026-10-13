@@ -27,6 +27,12 @@ seed_files:
   - name: hashsteer-mo.json
     content: '{"autosave": true}'
 
+# What the program needs from the system beyond what every system has: the
+# libraries it imports and does not bring along. Read from the downloads;
+# the test TestListDependencies checks it against them.
+requires:
+  linux: [libcrypto.so.3, libhwloc.so.15, libssl.so.3]
+
 args:
   - -c
   - hashsteer-mo.json

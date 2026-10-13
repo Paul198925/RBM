@@ -18,6 +18,13 @@ downloads:
     sha256: 7ccf91de99998cddc91001e22d91bf2489bdcc45d354a2e13f7e4f1b0bbc0405
     executable: wildrig-multi
 
+# What the program needs from the system beyond what every system has: the
+# libraries it imports and does not bring along. Read from the downloads;
+# the test TestListDependencies checks it against them.
+requires:
+  windows: [opencl.dll]
+  linux: [libOpenCL.so.1, libgcc_s.so.1, libstdc++.so.6]
+
 args:
   - --api-port
   - "{api_port}"

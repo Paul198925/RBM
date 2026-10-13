@@ -25,6 +25,7 @@ import (
 	"hashsteer/internal/pool"
 	"hashsteer/internal/rates"
 	"hashsteer/internal/stats"
+	"hashsteer/internal/sysdeps"
 	"hashsteer/internal/sysfix"
 	"hashsteer/internal/sysinfo"
 	"hashsteer/internal/update"
@@ -73,6 +74,8 @@ type App struct {
 	coinBalanceFn func(context.Context, pool.CoinPool) ([]pool.Balance, error)
 	// fixer installs what a miner program lacks, when the user asks for it
 	fixer sysfix.System
+	// finder says whether the system has a library a miner program needs
+	finder sysdeps.Finder
 	// walletFn asks a block explorer what an address holds, nil to ask
 	// none
 	walletFn func(ctx context.Context, currency, address string) (wallet.Balance, error)

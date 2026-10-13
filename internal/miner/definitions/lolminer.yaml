@@ -19,6 +19,12 @@ downloads:
     sha256: 0b8078299654a12846e4967f1db3506409cfb8b1031687a910965d1a99c6f270
     executable: lolMiner
 
+# What the program needs from the system beyond what every system has: the
+# libraries it imports and does not bring along. Read from the downloads;
+# the test TestListDependencies checks it against them.
+requires:
+  windows: [vcruntime140.dll, vcruntime140_1.dll]
+
 args:
   - --algo
   - "{algo}"
