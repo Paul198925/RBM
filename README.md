@@ -12,11 +12,13 @@ It is written in Go, as one program without dependencies to install, for Windows
 - **Estimates to start from.** hashsteer comes with hashrates that were measured on other machines. For a card it has figures for, it mines by them at once instead of benchmarking everything first; what is mined is measured, and the measurement replaces the estimate. See [Shared hashrates](#shared-hashrates).
 - **Profit switching.** Each round (one minute by default) it compares what every measured combination would earn, less electricity if you set a price, and switches when another one earns enough more. Prices count as an hourly average, and a started miner is left alone for a while, so it does not chase every spike.
 - **Device groups.** Cards of the same model mine together with one miner program; different models choose for themselves. The CPU can mine too and is off by default.
-- **Watchdog.** A miner that exits or reports no hashrate is restarted. One that keeps failing is taken out for a while. A benchmark that comes to nothing is tried again after six hours and after a day; after the third failure it is given up until the miner program has a new version or you let it back in from the interface. This is remembered across restarts.
+- **Watchdog.** A miner that exits or reports no hashrate is restarted. So is one that reports a hashrate while its graphics cards stand still and no share is accepted: some miner programs do that when a card fails. One that keeps failing is taken out for a while. A benchmark that comes to nothing is tried again after six hours and after a day; after the third failure it is given up until the miner program has a new version or you let it back in from the interface. This is remembered across restarts.
 - **Memory guard.** A miner whose algorithm needs more memory than is free is not started. This keeps two miners from building a large DAG at the same time.
 - **Miner programs are downloaded for you**, and each download is checked against a known SHA-256 before it is unpacked.
 - **Updates.** hashsteer looks for newer releases and says so on the dashboard, where one click installs one. See [Updates](#updates).
+- **Balances.** What the pools hold for you and what has arrived at your wallets, each also in your currency.
 - **Web interface.** Dashboard, devices, pools and what they pay, balances and payouts, benchmarks, activity of the last days, watchdog, logs, and all settings.
+- **Console dashboard.** The window the program runs in shows the same at a glance, redrawn in place.
 
 ## Pools
 
@@ -53,23 +55,31 @@ A miner program is described by a YAML file in [`internal/miner/definitions`](in
 
 ## Install
 
-Get the archive for your system from the [releases](https://github.com/Paul198925/hashsteer/releases), or [build it](#build).
+hashsteer needs the NVIDIA driver, and for this way of installing [Git](https://git-scm.com/downloads) and [Go](https://go.dev/dl/) 1.27 or newer. The start script builds the program from the source the first time it runs.
 
-The first start creates `config/` and `data/` next to the program. Without a wallet it waits: open <http://127.0.0.1:4000/> and add one under **Setup Wallets**.
+The first start creates `config/` and `data/` in the folder. Without a wallet hashsteer waits: open <http://127.0.0.1:4000/> and add one under **Setup Wallets**.
 
 ### Windows
 
-Unpack the archive and start `start.bat`.
+```bat
+git clone https://github.com/Paul198925/hashsteer.git
+cd hashsteer
+start.bat
+```
+
+If Go is missing, `start.bat` asks whether to install it with winget.
 
 Antivirus programs, Windows Defender among them, treat miner programs as unwanted software and remove them. hashsteer keeps the ones it downloads in `data\bin`; they only run if that folder is exempt from scanning.
 
 ### Linux
 
 ```sh
-tar -xzf hashsteer-v0.4.0-linux-amd64.tar.gz
-cd hashsteer-v0.4.0-linux-amd64
+git clone https://github.com/Paul198925/hashsteer.git
+cd hashsteer
 sh start.sh
 ```
+
+If Go is missing, `start.sh` says how to install it on your distribution. The Go that distributions package is often older than 1.27; from Go 1.21 on it fetches the version it needs by itself.
 
 To mine from boot on, as a systemd service that runs as your user:
 
@@ -78,6 +88,24 @@ sudo sh linux/install-service.sh
 ```
 
 `sudo sh linux/install-service.sh remove` takes the service out again. `journalctl -u hashsteer -f` shows what it logs.
+
+### Staying up to date
+
+A checkout updates like any other installation: **Update now** on the dashboard fetches the newest release and puts it in place of the program that was built. See [Updates](#updates).
+
+To run what is on `main` instead of the last release, fetch it and build it again. The start scripts only build when the program is not there, so remove it first:
+
+```sh
+git pull
+rm hashsteer          # Windows: del hashsteer.exe
+sh start.sh           # Windows: start.bat
+```
+
+Your `config/` and `data/` are not part of the repository and stay as they are.
+
+### Without Git and Go
+
+The [releases](https://github.com/Paul198925/hashsteer/releases) have the program ready built, with the start scripts: a zip for Windows and a tar.gz for Linux. Unpack it and start `start.bat` or `sh start.sh`.
 
 ### Needs
 
@@ -98,7 +126,7 @@ hashsteer [-config dir] <command>
   mine        run one miner on one algorithm, for testing
 ```
 
-`start.bat` and `start.sh` run `hashsteer run`. In a checkout of this repository they build the program first if it is not there yet. If Go is missing for that, `start.bat` asks whether to install it with winget, and `start.sh` says how to install it.
+`start.bat` and `start.sh` run `hashsteer run`, build the program first if it is not there yet, and start it again after an update.
 
 Every start of a miner program writes a log to `data/logs`; the web interface shows them. A log that grows past 32 MB is cut down to its end, logs older than two weeks are removed, and so are the oldest ones while all of them together take more than 1 GB.
 
@@ -138,7 +166,7 @@ The server hands out the median per card, miner program and algorithm, so that o
 
 ### Updates
 
-A few times a day hashsteer asks GitHub whether there is a newer release, and shows it on the dashboard. **Update now** fetches the release, checks it against the SHA-256 GitHub lists for the file, stops the miners and restarts with the new version. That restart needs `start.bat`, `start.sh` or the systemd service; started any other way, the new version waits for the next start.
+A few times a day hashsteer asks GitHub whether there is a newer release, and shows it on the dashboard. **Update now** fetches the release, checks it against the SHA-256 GitHub lists for the file, puts it in the place of the running program, stops the miners and restarts with the new version. That restart needs `start.bat`, `start.sh` or the systemd service; started any other way, the new version runs from the next start on.
 
 Both can be changed under `updates` in `config.yaml` or on the Setup page:
 
@@ -156,21 +184,25 @@ It listens on `127.0.0.1:4000`, which is only reachable from the machine itself.
 
 On Windows 11 with an RTX 3060 and an RTX 2080 SUPER, at zpool.ca:
 
-- Rigel, WildRig Multi and ccminer-tpfuemp mine, their statistics are read correctly and shares are accepted
-- benchmarks, switching, the watchdog and the web interface
+- Rigel, WildRig Multi, ccminer-tpfuemp, BzMiner and T-Rex 0.19.14 mine, their statistics are read correctly and shares are accepted
+- benchmarks, switching, the web interface and the console dashboard
+- the watchdog, including a miner that reported a hashrate while the card stood still
+- zpool's balance and payouts, and the exchange of hashrates with the share server
+- updates from one release to the next, with the program built for Windows
 
-Built from documentation and tested only with made-up data so far:
+Built from documentation and tested only with made-up data, or against the real services without mining:
 
-- the other miner programs, and the algorithms added to the three above later
-- 2Miners and WoolyPooly, including their balances and payouts
-- mining single coins at zpool, and the balance it reports
+- the other miner programs, and most algorithms of the ones above
+- 2Miners and WoolyPooly: what they pay is read from the real pools, but nothing was mined there
+- mining single coins at zpool
+- the wallet balances: eight of the nine block explorers were asked for real, with public addresses
 - everything on Linux: the program compiles and its tests pass there, but it has not mined on a Linux machine
 
 A miner program or algorithm that does not work fails its benchmark, waits, and is given up after the third failure; the rest goes on.
 
 ## Build
 
-Go 1.27 or newer, nothing else:
+The start scripts do this for you. By hand it takes Go 1.27 or newer and nothing else:
 
 ```sh
 go build -o hashsteer ./cmd/hashsteer        # Linux
