@@ -130,6 +130,10 @@ func (f *fakeBackend) Shared() (SharedInfo, error) {
 		{Device: "GeForce RTX 3060", Miner: "rigel", Version: "1.23.2", Algorithm: "kawpow", Hashrate: 20e6, PowerWatts: 151, Reports: 3, Mine: true, OwnHashrate: 19.8e6},
 		{Device: "GeForce RTX 3060", Miner: "wildrig", Version: "0.51.4", Algorithm: "anime", Hashrate: 28.5e6, PowerWatts: 167, Mine: true},
 		{Device: "GeForce RTX 4070", Miner: "rigel", Version: "1.23.2", Algorithm: "kawpow", Hashrate: 31e6, PowerWatts: 140, Reports: 1},
+		// more than one miner program for an algorithm, for the interface
+		{Device: "GeForce RTX 3060", Miner: "wildrig", Version: "0.51.4", Algorithm: "kawpow", Hashrate: 19.1e6, PowerWatts: 149, Reports: 2, Mine: true, OwnHashrate: 17e6},
+		{Device: "GeForce RTX 3060", Miner: "trex", Version: "0.26.8", Algorithm: "kawpow", Hashrate: 19.6e6, PowerWatts: 150, Reports: 1, Mine: true},
+		{Device: "GeForce RTX 4070", Miner: "wildrig", Version: "0.51.4", Algorithm: "anime", Hashrate: 41e6, PowerWatts: 150, Reports: 1},
 	}}, nil
 }
 

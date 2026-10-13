@@ -190,6 +190,9 @@ const state = {
   update: null,
   shared: { entries: [] },
   sharedMineOnly: true,
+  sharedSearch: '',
+  sharedOpen: new Set(),    // card|algorithm whose slower miners are shown
+  sharedClosed: new Set(),  // cards that are folded away
   updateAt: 0,
   offerMineOnly: true,
 };
@@ -754,43 +757,127 @@ function renderActivity() {
 
 // ---------------------------------------------------------------- shared
 
+// sharedCards arranges the shared figures the way they are read: by card,
+// then by algorithm, with the miner program that earns most first. An
+// algorithm some pool pays for right now gets what it would earn in a day.
+function sharedCards(entries) {
+  const price = new Map();
+  for (const o of state.offers || []) {
+    if (o.price > (price.get(o.algorithm) || 0)) price.set(o.algorithm, o.price);
+  }
+  const fee = new Map((state.meta ? state.meta.miners : []).map(m => [m.name, m.fee_percent || 0]));
+  // what is left of a hashrate after the miner program's own fee
+  const net = e => e.hashrate * (1 - (fee.get(e.miner) || 0) / 100);
+  const cards = new Map();
+  for (const e of entries) {
+    if (!cards.has(e.device)) cards.set(e.device, { device: e.device, mine: false, algos: new Map() });
+    const c = cards.get(e.device);
+    c.mine = c.mine || e.mine;
+    if (!c.algos.has(e.algorithm)) c.algos.set(e.algorithm, []);
+    c.algos.get(e.algorithm).push(e);
+  }
+  return Array.from(cards.values()).map(c => {
+    const algos = Array.from(c.algos, ([algorithm, miners]) => {
+      miners.sort((x, y) => net(y) - net(x) || x.miner.localeCompare(y.miner));
+      const paid = price.get(algorithm) || 0;
+      return { algorithm, miners, best: miners[0], earns: paid * net(miners[0]), paid: paid > 0 };
+    });
+    algos.sort((x, y) => y.earns - x.earns || x.algorithm.localeCompare(y.algorithm));
+    return { device: c.device, mine: c.mine, algos };
+  }).sort((x, y) => (y.mine - x.mine) || x.device.localeCompare(y.device, undefined, { numeric: true }));
+}
+
 function renderShared() {
   const info = state.shared;
-  const hasMine = info.entries.some(e => e.mine);
-  const rows = info.entries.filter(e => !state.sharedMineOnly || !hasMine || e.mine);
-  // how far this rig's own measurement is from the shared figure
+  const all = sharedCards(info.entries);
+  const hasMine = all.some(c => c.mine);
+  const words = (state.sharedSearch || '').trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const matches = (c, a) => words.every(w => (c.device + ' ' + a.algorithm + ' ' + a.miners.map(m => m.miner).join(' ')).toLowerCase().includes(w));
+  const cards = all.filter(c => !state.sharedMineOnly || !hasMine || c.mine)
+    .map(c => Object.assign({}, c, { shown: c.algos.filter(a => matches(c, a)) }))
+    .filter(c => c.shown.length > 0);
+  const money = btc => fiat(btc) || (btc * 1e8).toFixed(0) + ' sat';
+
+  // ---- the figures at the top
+  const algorithms = new Set(info.entries.map(e => e.algorithm));
+  const rigs = info.entries.reduce((n, e) => Math.max(n, e.reports), 0);
+  const measuredHere = info.entries.filter(e => e.own_hashrate > 0).length;
+  let top = null;
+  for (const c of all.filter(x => x.mine)) {
+    for (const a of c.algos) if (a.paid && (!top || a.earns > top.earns)) top = Object.assign({ device: c.device }, a);
+  }
+  const stats = h('div', { class: 'cards' },
+    card('Cards', all.length, hasMine ? all.filter(c => c.mine).length + ' of them in this rig' : 'none of them in this rig'),
+    card('Algorithms', algorithms.size, info.entries.length + ' hashrates in all'),
+    card('Rigs', rigs > 0 ? rigs : '-', rigs > 0 ? 'at most, behind one figure' : 'only the figures hashsteer comes with'),
+    card('Last fetched', info.fetched ? fmtAgo(info.fetched) + ' ago' : 'never', info.url ? info.url.replace(/^https?:\/\//, '') : 'no share server is set'),
+    card('This rig', info.upload ? 'shares' : 'does not share', measuredHere + ' of these measured here'),
+    top ? card('Pays best right now', money(top.earns) + '/day', top.algorithm + ' with ' + top.best.miner + ' on one ' + top.device) : null);
+
+  // ---- one block per card
   const diff = e => (e.own_hashrate > 0 ? 100 * (e.own_hashrate - e.hashrate) / e.hashrate : null);
-  const t = dataTable('shared', [
-    { key: 'device', label: 'Device', cell: e => [e.device, e.mine ? h('small', { class: 'help' }, '  yours') : null] },
-    { key: 'miner', label: 'Name', cell: e => [e.miner, h('small', { class: 'help' }, '  ' + (e.version || ''))] },
-    { key: 'algorithm', label: 'Algorithm' },
-    { key: 'hashrate', label: 'Speed', num: true, cell: e => fmtHash(e.hashrate) },
-    { key: 'power_watts', label: 'Power', num: true, cell: e => fmtWatts(e.power_watts) },
-    { key: 'reports', label: 'Rigs', num: true,
-      cell: e => (e.reports > 0 ? e.reports : h('span', { class: 'help', title: 'This figure comes with hashsteer, not from the share server.' }, 'built in')) },
-    { key: 'own_hashrate', label: 'Measured here', num: true, cell: e => (e.own_hashrate > 0 ? fmtHash(e.own_hashrate) : '') },
-    { key: 'diff', label: 'Difference', num: true, value: e => (diff(e) === null ? -1000 : diff(e)),
-      cell: e => (diff(e) === null ? '' : (diff(e) > 0 ? '+' : '') + diff(e).toFixed(1) + ' %'),
-      cls: e => (diff(e) === null ? '' : diff(e) >= 0 ? 'pos' : diff(e) < -10 ? 'neg' : '') },
-  ], rows, { empty: 'No shared hashrates are known.', sort: { key: 'device', dir: 1 } });
+  const minerRow = (c, a, e, first) => {
+    const key = c.device + '|' + a.algorithm;
+    const open = state.sharedOpen.has(key);
+    const more = a.miners.length - 1;
+    const d = diff(e);
+    return h('tr', { class: first ? '' : 'other' },
+      h('td', {}, first ? a.algorithm : ''),
+      h('td', {}, e.miner, h('small', { class: 'help' }, '  ' + (e.version || '')),
+        first && more > 0 ? h('button', { class: 'small more', title: 'The other miner programs measured for this algorithm',
+          onclick: () => { if (open) state.sharedOpen.delete(key); else state.sharedOpen.add(key); render(); } }, open ? 'hide' : '+' + more + ' slower') : null),
+      h('td', { class: 'num' }, fmtHash(e.hashrate)),
+      h('td', { class: 'num' }, fmtWatts(e.power_watts)),
+      h('td', { class: 'num' }, e.power_watts > 0 ? fmtHash(e.hashrate / e.power_watts).replace('/s', '/W') : ''),
+      h('td', { class: 'num' }, e.reports > 0 ? e.reports : h('span', { class: 'help', title: 'This figure comes with hashsteer, not from the share server.' }, 'built in')),
+      h('td', { class: 'num' }, e.own_hashrate > 0 ? fmtHash(e.own_hashrate) : ''),
+      h('td', { class: 'num ' + (d === null ? '' : d >= 0 ? 'pos' : d < -10 ? 'neg' : '') }, d === null ? '' : (d > 0 ? '+' : '') + d.toFixed(1) + ' %'),
+      h('td', { class: 'num' + (first && a.paid ? ' earns' : '') }, first ? (a.paid ? money(a.earns) : h('span', { class: 'help', title: 'No enabled pool pays for this algorithm right now.' }, 'no offer')) : ''));
+  };
+  const block = c => {
+    const closed = state.sharedClosed.has(c.device);
+    const best = c.algos.find(a => a.paid);
+    const rows = [];
+    for (const a of c.shown) {
+      rows.push(minerRow(c, a, a.best, true));
+      if (state.sharedOpen.has(c.device + '|' + a.algorithm)) for (const e of a.miners.slice(1)) rows.push(minerRow(c, a, e, false));
+    }
+    return h('div', { class: 'sharedcard' },
+      h('div', { class: 'head', onclick: () => { if (closed) state.sharedClosed.delete(c.device); else state.sharedClosed.add(c.device); render(); } },
+        h('span', { class: 'fold' }, closed ? '+' : '-'),
+        h('h2', {}, c.device),
+        c.mine ? h('span', { class: 'badge ok' }, 'in this rig') : null,
+        h('span', { class: 'help' }, c.algos.length + (c.algos.length === 1 ? ' algorithm' : ' algorithms') +
+          (best ? ', best right now: ' + best.algorithm + ' at ' + money(best.earns) + '/day' : ''))),
+      closed ? null : h('table', {},
+        h('thead', {}, h('tr', {},
+          h('th', {}, 'Algorithm'), h('th', {}, 'Fastest miner'), h('th', { class: 'num' }, 'Speed'), h('th', { class: 'num' }, 'Power'),
+          h('th', { class: 'num', title: 'Hashes per second for each watt' }, 'per watt'),
+          h('th', { class: 'num', title: 'How many rigs the figure is the middle of' }, 'Rigs'),
+          h('th', { class: 'num' }, 'Measured here'), h('th', { class: 'num' }, 'Difference'),
+          h('th', { class: 'num', title: 'What one card would earn in a day at the best price an enabled pool pays right now, after the fees of pool and miner program, before electricity' }, 'Earns/day'))),
+        h('tbody', {}, rows)));
+  };
 
   const where = info.url
-    ? [info.fetched ? 'Last fetched from ' + info.url + ' ' + fmtAgo(info.fetched) + ' ago.' : 'Nothing was fetched from ' + info.url + ' yet; the figures below come with hashsteer.',
-      info.download ? '' : ' Fetching is turned off.',
-      info.upload ? ' This rig shares what it measures.' : ' This rig does not share what it measures.']
-    : ['No share server is set; the figures below come with hashsteer.'];
+    ? [info.fetched ? '' : 'Nothing was fetched from ' + info.url + ' yet; the figures below come with hashsteer. ',
+      info.download ? '' : 'Fetching is turned off. ']
+    : ['No share server is set; the figures below come with hashsteer. '];
+  const shownAlgos = cards.reduce((n, c) => n + c.shown.length, 0);
   return h('div', {},
     h('div', { class: 'title' }, h('h1', {}, 'Shared Hashrates'),
       h('button', { class: 'primary', disabled: !info.url, onclick: refreshShared }, info.upload ? 'Fetch and share now' : 'Fetch now')),
-    h('p', { class: 'lead' }, 'What other rigs measured, per card, miner program and algorithm: the middle of what was reported. ' +
-      (info.used ? 'hashsteer starts from these figures for your cards until it has measured them itself.' : 'They are not used: "Start from estimates" is turned off under Setup.') +
-      ' The same card is faster or slower with another driver, clock or power limit; "Measured here" shows what yours does.'),
-    h('p', { class: 'help' }, where.join(''), ' ', h('a', { href: '#/setup' }, 'Change this under Setup.')),
+    h('p', { class: 'lead' }, 'What other rigs measured for one card of a model: the middle of what was reported. Per algorithm the fastest miner program is shown, with what it would earn at today\'s prices; the slower ones are a click away. ' +
+      (info.used ? 'hashsteer starts from these figures for your cards until it has measured them itself.' : 'They are not used: "Start from estimates" is turned off under Setup.')),
+    stats,
+    h('p', { class: 'help' }, where.join(''), 'The same card is faster or slower with another driver, clock or power limit; "Measured here" shows what yours does. ', h('a', { href: '#/setup' }, 'Sharing is set under Setup.')),
     h('div', { class: 'toolbar' },
+      h('input', { type: 'search', placeholder: 'algorithm, miner, card', value: state.sharedSearch || '',
+        oninput: e => { state.sharedSearch = e.target.value; render(); const box = document.querySelector('.toolbar input[type=search]'); if (box) { box.focus(); box.setSelectionRange(box.value.length, box.value.length); } } }),
       hasMine ? h('label', {}, h('input', { type: 'checkbox', checked: state.sharedMineOnly,
         onchange: e => { state.sharedMineOnly = e.target.checked; render(); } }), ' only the cards of this rig') : null,
-      h('span', { class: 'help' }, t.rows.length + ' of ' + info.entries.length + ' shown')),
-    t.el);
+      h('span', { class: 'help' }, shownAlgos + ' algorithms on ' + cards.length + (cards.length === 1 ? ' card' : ' cards') + ' shown')),
+    cards.length ? cards.map(block) : h('div', { class: 'empty' }, info.entries.length ? 'Nothing matches.' : 'No shared hashrates are known.'));
 }
 
 async function refreshShared() {
@@ -1281,7 +1368,7 @@ const VIEWS = {
 const NEEDS = {
   dashboard: ['devices', 'balances', 'benchmarks'], devices: ['devices'],
   bestpools: ['offers'], allpools: ['offers'], earnings: ['balances'], payouts: ['balances'], totals: ['totals'],
-  benchmarks: ['benchmarks'], activity: ['activity'], shared: ['shared'], console: ['log', 'minerlogs'],
+  benchmarks: ['benchmarks'], activity: ['activity'], shared: ['shared', 'offers'], console: ['log', 'minerlogs'],
 };
 const SOURCES = { devices: 'devices', balances: 'balances', offers: 'offers', totals: 'totals', benchmarks: 'benchmarks', activity: 'activity', shared: 'shared', log: 'log', minerlogs: 'minerLogs' };
 
