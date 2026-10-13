@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"os"
-	"path/filepath"
-	"strings"
 	"time"
 
 	"hashsteer/internal/api"
@@ -63,12 +61,24 @@ func newProgramPath() (string, error) {
 
 // newProgramName turns ".../hashsteer.exe" into ".../hashsteer.new.exe" and
 // ".../hashsteer" into ".../hashsteer.new".
-func newProgramName(exe string) string {
-	dir, base := filepath.Dir(exe), filepath.Base(exe)
-	if name, isExe := strings.CutSuffix(base, ".exe"); isExe {
-		return filepath.Join(dir, name+".new.exe")
+func newProgramName(exe string) string { return update.NewPath(exe) }
+
+// swapProgram puts the fetched build in the place of the running program,
+// and reports whether it did. Where that fails, the new build stays next to
+// the program and the start script puts it in place, as it always did.
+func (a *App) swapProgram() bool {
+	if a.swapIn == nil {
+		return false
 	}
-	return filepath.Join(dir, base+".new")
+	exe, err := os.Executable()
+	if err != nil {
+		return false
+	}
+	if err := a.swapIn(exe); err != nil {
+		a.logf("the new program is left for the start script to put in place: %v", err)
+		return false
+	}
+	return true
 }
 
 // UpdateInfo says whether a newer release exists and what was done with it.
@@ -155,6 +165,8 @@ func (a *App) InstallUpdate(ctx context.Context) error {
 		return err
 	}
 
+	// in place already, the next start is the new one whatever starts it
+	a.swapProgram()
 	if !restartable() {
 		a.logf("hashsteer %s is fetched and checked. It takes over at the next start.", u.latest.Version)
 		return nil

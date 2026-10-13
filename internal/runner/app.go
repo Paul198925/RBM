@@ -58,6 +58,9 @@ type App struct {
 	// checker asks for newer releases, nil where that is not wanted;
 	// restart is signalled when one is to take over
 	checker *update.Checker
+	// swapIn puts a fetched build in the place of the running program;
+	// nil leaves that to the start script
+	swapIn  func(exe string) error
 	restart chan struct{}
 	reload  chan struct{}
 	started time.Time
@@ -100,6 +103,10 @@ func NewApp(ctx context.Context, configDir string, out io.Writer) (*App, error) 
 	if err != nil {
 		return nil, err
 	}
+	// the build an update replaced no longer runs: it can go
+	if exe, err := os.Executable(); err == nil {
+		update.ClearOld(exe)
+	}
 	var notices []string
 	if problem != "" {
 		notices = append(notices, problem)
@@ -108,6 +115,7 @@ func NewApp(ctx context.Context, configDir string, out io.Writer) (*App, error) 
 	return &App{
 		notices:     notices,
 		checker:     &update.Checker{},
+		swapIn:      update.SwapIn,
 		restart:     make(chan struct{}, 1),
 		configDir:   configDir,
 		out:         out,

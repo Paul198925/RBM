@@ -12,6 +12,7 @@
 # build output
 /hashsteer
 /hashsteer.new
+/hashsteer.old
 *.exe
 *.exe~
 

@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -124,6 +125,34 @@ func TestUpdateIsFoundFetchedAndWaits(t *testing.T) {
 	case <-app.restart:
 	default:
 		t.Error("no restart")
+	}
+
+	// the program puts the new build in its own place before it ends
+	var swapped []string
+	app.swapIn = func(exe string) error {
+		swapped = append(swapped, exe)
+		return nil
+	}
+	if err := app.InstallUpdate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if self, _ := os.Executable(); len(swapped) != 1 || swapped[0] != self {
+		t.Errorf("swapped %v", swapped)
+	}
+	<-app.restart
+	// where that fails the start script is left to do it, and the
+	// restart happens all the same
+	app.swapIn = func(string) error { return errors.New("access is denied") }
+	if err := app.InstallUpdate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-app.restart:
+	default:
+		t.Error("no restart after a swap that failed")
+	}
+	if !strings.Contains(out.String(), "left for the start script to put in place: access is denied") {
+		t.Errorf("log: %s", out.String())
 	}
 }
 
