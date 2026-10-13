@@ -10,7 +10,7 @@ func TestConsoleIsTheWindowsPicture(t *testing.T) {
 	app.logf("a line of the log")
 	lines := app.Console()
 	text := strings.Join(lines, "\n")
-	for _, want := range []string{"hashsteer " + Version, "worker ", "RUNNING MINERS","\x1b["} {
+	for _, want := range []string{"hashsteer " + Version, "worker ", "RUNNING MINERS", "\x1b["} {
 		if !strings.Contains(text, want) {
 			t.Errorf("the console lacks %q:\n%s", want, text)
 		}
