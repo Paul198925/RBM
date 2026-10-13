@@ -28,7 +28,7 @@ const (
 // one address that leads to the nearest.
 var WoolyPoolyRegions = []string{"eu"}
 
-// The coins of woolypooly.com that a GPU can mine with the miner programs
+// The coins of woolypooly.com that a GPU or a CPU can mine with the miner programs
 // known here. One port serves both plain and TLS connections.
 var woolyPoolyCoins = []poolCoin{
 	{CoinInfo: CoinInfo{"ERG", "Ergo", "autolykos2"}, rpc: "ergo-1", port: 3100, priceID: "ergo"},
@@ -37,8 +37,12 @@ var woolyPoolyCoins = []poolCoin{
 	{CoinInfo: CoinInfo{"FIRO", "Firo", "firopow"}, rpc: "firo-1", port: 3104, priceID: "zcoin"},
 	{CoinInfo: CoinInfo{"MEWC", "Meowcoin", "meowpow"}, rpc: "mewc-1", port: 3116, priceID: "meowcoin"},
 	{CoinInfo: CoinInfo{"NEXA", "Nexa", "nexapow"}, rpc: "nexa-1", port: 3124, priceID: "nexacoin"},
+	{CoinInfo: CoinInfo{"OCTA", "OctaSpace", "ethash"}, rpc: "octa-1", port: 3130, priceID: "octaspace"},
+	// mined with the CPU, or with a GPU miner that knows the algorithm
+	{CoinInfo: CoinInfo{"RTM", "Raptoreum", "ghostrider"}, rpc: "rtm-1", port: 3110, priceID: "raptoreum"},
 	{CoinInfo: CoinInfo{"RVN", "Ravencoin", "kawpow"}, rpc: "raven-1", port: 55555, priceID: "ravencoin"},
 	{CoinInfo: CoinInfo{"RXD", "Radiant", "sha512256d"}, rpc: "rxd-1", port: 3122, priceID: "radiant"},
+	{CoinInfo: CoinInfo{"VTC", "Vertcoin", "verthash"}, rpc: "vtc-1", port: 3102, priceID: "vertcoin"},
 	{CoinInfo: CoinInfo{"XNA", "Neurai", "kawpow"}, rpc: "xna-1", port: 3128, priceID: "neurai"},
 }
 

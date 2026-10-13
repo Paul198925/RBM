@@ -23,8 +23,8 @@ It is written in Go, as one program without dependencies to install, for Windows
 | pool | pays | coins |
 |---|---|---|
 | [zpool.ca](https://zpool.ca) | everything in one coin of your choice | whatever its algorithms mine; single coins can be chosen or left to the pool |
-| [2Miners](https://2miners.com) | the coin that is mined | ERG, ETC, ETHW, NEXA, RVN, XNA |
-| [WoolyPooly](https://woolypooly.com) | the coin that is mined | ERG, ETC, ETHW, FIRO, MEWC, NEXA, RVN, RXD, XNA |
+| [2Miners](https://2miners.com) | the coin that is mined | BTG, ERG, ETC, ETHW, NEXA, RVN, XNA, ZEPH (CPU) |
+| [WoolyPooly](https://woolypooly.com) | the coin that is mined | ERG, ETC, ETHW, FIRO, MEWC, NEXA, OCTA, RTM (CPU), RVN, RXD, VTC, XNA |
 
 Wallets are kept in one list, one address per coin, and every pool uses the ones it can. 2Miners and WoolyPooly mine the coins that have a wallet; zpool pays to the wallet of its payout coin. **Setup Coins** lists every coin that can be mined as a single coin with what it still needs (a pool, a wallet, a miner program) and what it would earn right now, and has one switch per coin that holds for all pools. The dashboard also shows what has arrived at each wallet: for BTC, DOGE, ERG, ETC, FIRO, LTC, MEWC, RVN and XNA the address is looked up every ten minutes at a public block explorer of the coin. That can be switched off under **Setup Wallets**.
 
@@ -45,7 +45,7 @@ zpool reports what it pays itself. For the other two the figure is worked out fr
 | T-Rex | 0.26.8 | NVIDIA | 5 | Windows, Linux |
 | T-Rex | 0.19.14 | NVIDIA | 9 | Windows, Linux |
 | WildRig Multi | 0.51.4 | NVIDIA | 15 | Windows, Linux |
-| XMRig | 6.26.0 | CPU | 2 | Windows, Linux |
+| XMRig | 6.26.0 | CPU | 3 | Windows, Linux |
 
 Together they cover what zpool.ca offers, except the algorithms that ASICs or FPGAs mine (sha256, scrypt, x11 and the like), where a graphics card earns next to nothing. Where several programs mine the same algorithm, all are measured and the fastest is used. Most of them are closed source and take a developer fee, which hashsteer counts in.
 

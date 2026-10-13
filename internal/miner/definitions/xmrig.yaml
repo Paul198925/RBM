@@ -44,4 +44,8 @@ scheme_tls: stratum+ssl
 algorithms:
   - name: ghostrider
     miner_name: gr
+  # Monero's algorithm, here for the coins of the coin pools that use it
+  # as it is, like Zephyr. It wants 2.3 GB of memory per run.
+  - name: randomx
+    miner_name: rx/0
   - name: flex

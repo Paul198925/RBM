@@ -28,15 +28,18 @@ const rewardMaxAge = time.Hour
 // TwoMinersRegions lists where 2miners.com runs stratum servers.
 var TwoMinersRegions = []string{"eu", "us", "asia"}
 
-// The coins of 2miners.com that a GPU can mine. The stratum ports are the
+// The coins of 2miners.com that a GPU or a CPU can mine. The stratum ports are the
 // pool's ports for small rigs; port + 10000 is the same with TLS.
 var twoMinersCoins = []poolCoin{
+	{CoinInfo: CoinInfo{"BTG", "Bitcoin Gold", "equihash144"}, rpc: "btg", port: 4040, divisor: 1e8, priceID: "bitcoin-gold"},
 	{CoinInfo: CoinInfo{"ERG", "Ergo", "autolykos2"}, rpc: "erg", port: 8888, divisor: 1e9, priceID: "ergo"},
 	{CoinInfo: CoinInfo{"ETC", "Ethereum Classic", "etchash"}, rpc: "etc", port: 1010, divisor: 1e18, priceID: "ethereum-classic"},
 	{CoinInfo: CoinInfo{"ETHW", "EthereumPoW", "ethash"}, rpc: "ethw", port: 2020, divisor: 1e18, priceID: "ethereum-pow-iou"},
 	{CoinInfo: CoinInfo{"NEXA", "Nexa", "nexapow"}, rpc: "nexa", port: 5050, divisor: 100, priceID: "nexacoin"},
 	{CoinInfo: CoinInfo{"RVN", "Ravencoin", "kawpow"}, rpc: "rvn", port: 6060, divisor: 1e8, priceID: "ravencoin"},
 	{CoinInfo: CoinInfo{"XNA", "Neurai", "kawpow"}, rpc: "xna", port: 6060, divisor: 1e8, priceID: "neurai"},
+	// mined with the CPU
+	{CoinInfo: CoinInfo{"ZEPH", "Zephyr", "randomx"}, rpc: "zeph", port: 2222, divisor: 1e12, priceID: "zephyr-protocol"},
 }
 
 // TwoMiners reads 2miners.com, a pool with one stratum server per coin
