@@ -182,6 +182,9 @@ const state = {
   log: [],
   minerLogs: [],
   minerLog: { name: '', text: '' },
+  dependencies: null,   // what the miner programs need from the system; null until asked for
+  installing: '',
+  activeLogs: [],   // the logs of the miner programs that run right now
   balances: { balances: [], wallets: [] },
   activity: [],
   totals: [],
@@ -1040,6 +1043,50 @@ function renderSetup() {
     h('div', { class: 'form' + (state.page === 'setupcoins' ? ' wide' : '') }, body()), savebar);
 }
 
+// setupDependencies lists what the miner programs need from the system and
+// whether it is there. It changes nothing by being looked at.
+function setupDependencies() {
+  const list = state.dependencies;
+  const check = async () => {
+    try { state.dependencies = await api('/api/dependencies'); } catch (e) { toast(e.message, true); }
+    render();
+  };
+  if (list === null) {
+    // asked for once when the page is first shown
+    state.dependencies = [];
+    check();
+  }
+  const install = async need => {
+    if (!confirm('Install ' + need.package + ' on this machine?\n\nhashsteer runs:\n' + need.command + '\n\nThis changes the system. On Linux it needs sudo to work without a password; on Windows the system may ask on the desktop whether to allow it.')) return;
+    state.installing = need.library;
+    render();
+    try {
+      state.dependencies = await api('/api/dependencies/install', { method: 'POST', body: { library: need.library } });
+      toast(need.package + ' is installed');
+    } catch (e) { alert(e.message); }
+    state.installing = '';
+    await check();
+  };
+  const needLine = need => h('div', { class: 'need' },
+    h('span', { class: 'badge ' + (need.present ? 'ok' : 'failed') }, need.present ? 'found' : 'missing'),
+    h('code', {}, need.library),
+    need.present ? null
+      : need.command ? [h('button', { class: 'small', disabled: Boolean(state.installing), title: 'Runs: ' + need.command, onclick: () => install(need) },
+        state.installing === need.library ? 'Installing ...' : 'Install ' + need.package), h('span', { class: 'help' }, need.command)]
+        : h('span', { class: 'help' }, need.from_driver ? 'comes with the NVIDIA driver: install or update the driver' : 'hashsteer knows no package for it: install it with the package manager of your system'));
+  const missing = (list || []).reduce((n, d) => n + d.needs.filter(x => !x.present).length, 0);
+  return h('div', { class: 'section' }, h('h3', {}, 'Dependencies'),
+    h('p', { class: 'help' }, 'What the miner programs need from this system besides themselves: libraries they do not bring along. A program that lacks one cannot start and is taken out. Where hashsteer knows the package for a missing library, it installs it when you ask it to here; it installs nothing by itself. Looking at this list changes nothing.'),
+    list && list.length ? h('table', { class: 'coins' },
+      h('thead', {}, h('tr', {}, h('th', {}, 'Miner program'), h('th', {}, 'For'), h('th', {}, 'Needs from the system'))),
+      h('tbody', {}, list.map(d => h('tr', {},
+        h('td', { class: 'sym' }, d.miner, h('small', { class: 'help' }, '  ' + d.version)),
+        h('td', {}, d.vendor),
+        h('td', {}, d.needs.length ? d.needs.map(needLine) : h('span', { class: 'help' }, 'nothing: it brings everything along')))))) : h('div', { class: 'empty' }, 'Checking ...'),
+    h('div', { class: 'go' }, h('button', { onclick: check }, 'Check again'),
+      h('span', { class: 'help' }, list && list.length ? (missing ? '  ' + missing + (missing === 1 ? ' library is' : ' libraries are') + ' missing.' : '  Everything the miner programs need is there.') : '')));
+}
+
 function setupGeneral() {
   return [
     h('div', { class: 'section' }, h('h3', {}, 'Basic Setup'),
@@ -1075,6 +1122,7 @@ function setupGeneral() {
     h('div', { class: 'section' }, h('h3', {}, 'Machine\'s localhost API setup'),
       textField('Listen address', 'general.api.listen', 'host:port. 127.0.0.1 is only reachable from this machine. A change takes effect after hashsteer is restarted. Empty turns the interface off.'),
       textField('Password', 'general.api.password', 'Without a password the interface only works on this machine. With one, every access needs it (the user name does not matter). Use it only on a network you trust: the connection is not encrypted.', 'password')),
+    setupDependencies()
   ];
 }
 
@@ -1383,21 +1431,53 @@ function renderConsole() {
   const lines = state.consoleLines || [];
   const term = h('pre', { class: 'term' }, lines.length ? lines.map(termLine) : 'The console window has nothing to show yet.');
   const engineLog = h('pre', { class: 'log', id: 'engine-log' }, state.log.join('\n') || 'Nothing logged yet.');
-  const select = h('select', { onchange: e => loadMinerLog(e.target.value) },
-    h('option', { value: '' }, state.minerLogs.length ? 'Choose a miner log ...' : 'No miner logs yet'),
-    state.minerLogs.map(f => h('option', { value: f.name, selected: f.name === state.minerLog.name },
-      f.name + '   (' + Math.max(1, Math.round(f.size / 1024)) + ' kB)')));
+  // the logs of the miner programs that run right now, one below the other
+  const active = (state.activeLogs || []).map(l => [
+    h('h3', { class: 'minerlog' }, l.group + ': ' + l.miner + ' on ' + l.algorithm,
+      h('small', { class: 'help' }, '  ' + (l.name || 'no log file yet'))),
+    h('pre', { class: 'log active' }, l.text || (l.name ? '(empty)' : 'The miner program has not written anything yet.'))]);
+  // a log that was asked for by name, from the Benchmarks page
+  const asked = state.minerLog.name ? [
+    h('h3', { class: 'minerlog' }, 'Asked for: ' + state.minerLog.name,
+      h('button', { class: 'small', onclick: () => { state.minerLog = { name: '', text: '' }; render(); } }, 'Close')),
+    h('pre', { class: 'log active' }, state.minerLog.text || '(empty)')] : null;
   const out = h('div', {}, h('h1', {}, 'Console'),
-    h('p', { class: 'lead' }, 'What the window shows that hashsteer runs in, redrawn every few seconds. The whole log and the logs of the miner programs are below.'),
+    h('p', { class: 'lead' }, 'What the window shows that hashsteer runs in, redrawn every few seconds. Below are the whole log, and what the miner programs that run right now write themselves.'),
     term,
     h('h2', {}, 'Log'), engineLog,
     h('h2', {}, 'Miner programs'),
-    h('div', { class: 'toolbar' }, select,
-      h('button', { onclick: () => loadMinerLog(state.minerLog.name), disabled: !state.minerLog.name }, 'Reload')),
-    state.minerLog.name ? h('pre', { class: 'log', id: 'miner-log' }, state.minerLog.text || '(empty)') : null);
+    active.length ? active : h('div', { class: 'empty' }, 'No miner program is running.'),
+    asked);
   // show the newest lines
-  setTimeout(() => { for (const id of ['engine-log', 'miner-log']) { const el = document.getElementById(id); if (el) el.scrollTop = el.scrollHeight; } }, 0);
+  setTimeout(() => { for (const el of document.querySelectorAll('pre.log')) el.scrollTop = el.scrollHeight; }, 0);
   return out;
+}
+
+// activeLogFiles names the newest log of every miner program that runs.
+// The files are called miner-algorithm-group-date-time.log, and the date
+// sorts by time.
+function activeLogFiles() {
+  const list = [];
+  for (const g of (state.status ? state.status.groups : [])) {
+    if (g.state === 'idle' || !g.miner) continue;
+    const prefix = g.miner + '-' + g.algorithm + '-' + g.name + '-';
+    let newest = '';
+    for (const f of state.minerLogs) {
+      if (f.name.startsWith(prefix) && f.name.length === prefix.length + '20060102-150405.log'.length && f.name > newest) newest = f.name;
+    }
+    list.push({ group: g.name, miner: g.miner, algorithm: g.algorithm, name: newest, text: '' });
+  }
+  return list;
+}
+
+// loadActiveLogs reads the end of the log of every running miner program.
+async function loadActiveLogs() {
+  const list = activeLogFiles();
+  for (const l of list) {
+    if (!l.name) continue;
+    try { l.text = await api('/api/minerlogs/' + encodeURIComponent(l.name)); } catch (e) { l.text = '(' + e.message + ')'; }
+  }
+  state.activeLogs = list;
 }
 
 async function loadMinerLog(name) {
@@ -1449,6 +1529,7 @@ async function refreshStatus() {
   for (const what of NEEDS[state.page] || []) {
     try { state[SOURCES[what]] = await api('/api/' + what); } catch (e) { /* stale figures stay; the next tick tries again */ }
   }
+  if (state.page === 'console') await loadActiveLogs();
 
   // nothing is redrawn under the user's hands: not the setup pages, and no
   // page while a field is being typed into

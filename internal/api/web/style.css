@@ -244,6 +244,11 @@ table.wallets { width: 100%; margin: 8px 0; }
 table.wallets td { padding: 4px 8px 4px 0; border: 0; background: none; }
 table.wallets th { padding: 2px 8px 2px 0; background: none; border: 0; }
 table.wallets input.wide { width: 100%; min-width: 260px; font-family: var(--mono); }
+.need { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 2px 0; }
+.need code { min-width: 150px; }
+h3.minerlog { margin: 14px 0 6px; font-size: 14px; }
+h3.minerlog button { margin-left: 10px; }
+pre.log.active { max-height: 320px; }
 pre.term { margin: 0 0 8px; padding: 14px 16px; overflow-x: auto; font: 13px/1.45 var(--mono); color: #d7dde5; background: #0b0e12; border: 1px solid var(--line); border-radius: 8px; }
 pre.term div { white-space: pre; min-height: 1.45em; }
 pre.term .b { font-weight: 700; color: #f2f5f8; }

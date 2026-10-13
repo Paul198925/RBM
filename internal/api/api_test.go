@@ -79,6 +79,32 @@ func (f *fakeBackend) System() System {
 	return system
 }
 
+func (f *fakeBackend) Dependencies() []Dependency {
+	curl := Need{Library: "libcurl.so.4", Present: f.fixed["libcurl.so.4"]}
+	if !curl.Present {
+		curl.Package, curl.Command = "libcurl4", "sudo apt-get install -y libcurl4"
+	}
+	return []Dependency{
+		{Miner: "bzminer", Version: "100.45", Vendor: "NVIDIA", Needs: []Need{}},
+		{Miner: "ccminer-tpfuemp", Version: "2026.09.2", Vendor: "NVIDIA", Needs: []Need{
+			curl, {Library: "libcuda.so.1", FromDriver: true}, {Library: "libgomp.so.1", Present: true}, {Library: "libstdc++.so.6", Present: true}}},
+		{Miner: "wildrig", Version: "0.51.4", Vendor: "NVIDIA", Needs: []Need{{Library: "libOpenCL.so.1", Present: true}}},
+		{Miner: "xmrig", Version: "6.26.0", Vendor: "CPU", Needs: []Need{}},
+		{Miner: "xmrig-mo", Version: "6.26.0-mo5", Vendor: "CPU", Needs: []Need{{Library: "libhwloc.so.15"}}},
+	}
+}
+
+func (f *fakeBackend) InstallDependency(ctx context.Context, library string) error {
+	if library != "libcurl.so.4" {
+		return errors.New("hashsteer knows no package for " + library)
+	}
+	if f.fixed == nil {
+		f.fixed = map[string]bool{}
+	}
+	f.fixed[library] = true
+	return nil
+}
+
 func (f *fakeBackend) Console() []string {
 	return []string{
 		"\x1b[1m\x1b[36mhashsteer vtest   worker hashsteer   up 1d 3h\x1b[0m",
@@ -240,13 +266,21 @@ func (f *fakeBackend) Benchmarks() []engine.BenchmarkStatus {
 func (f *fakeBackend) Log() []string { return []string{"12:00:00 started"} }
 
 func (f *fakeBackend) MinerLogs() ([]LogFile, error) {
-	return []LogFile{{Name: "rigel-kawpow.log", Size: 2048}}, nil
+	return []LogFile{{Name: "rigel-kawpow.log", Size: 2048},
+		// the logs of the two miners that run in the made-up status, and an older one
+		{Name: "rigel-kawpow-RTX3060-20261011-120000.log", Size: 4096},
+		{Name: "rigel-kawpow-RTX3060-20261011-090000.log", Size: 1024},
+		{Name: "wildrig-meowpow-RTX2080SUPER-20261011-121500.log", Size: 3072}}, nil
 }
 
 func (f *fakeBackend) MinerLog(name string) (string, error) {
 	switch name {
 	case "rigel-kawpow.log":
 		return "GPU#0 solution accepted\n", nil
+	case "rigel-kawpow-RTX3060-20261011-120000.log":
+		return "[12:00:01] connected to kawpow.eu.mine.zpool.ca:1325\n[12:00:09] GPU#0 19.93 MH/s\n[12:00:15] share accepted (41/1)\n", nil
+	case "wildrig-meowpow-RTX2080SUPER-20261011-121500.log":
+		return "[12:15:02] DAG generated in 8.2 s\n[12:15:20] accepted 3/3 (100%), 21.48 MH/s\n", nil
 	case "bad name":
 		return "", errors.New("not a log file name")
 	}
