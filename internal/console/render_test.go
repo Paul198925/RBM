@@ -90,6 +90,51 @@ func TestRenderShowsWhatMatters(t *testing.T) {
 	}
 }
 
+func TestRenderWithoutCharactersOutsideASCII(t *testing.T) {
+	s := sample()
+	s.ASCII = true
+	for _, line := range Render(s, 120, 44, true) {
+		for _, r := range line {
+			if r > 127 {
+				t.Fatalf("a character outside ASCII in %q", line)
+			}
+		}
+	}
+	text := strings.Join(Render(s, 120, 44, false), "\n")
+	if !strings.Contains(text, "84 C") || !strings.Contains(text, "Temp") {
+		t.Errorf("the temperature is gone:\n%s", text)
+	}
+	// the columns still line up: the row is as long as before, less the sign
+	if !strings.Contains(text, "GPU#01  RTX 2080 SUPER  84 C  90 %  205 W   99 %") {
+		t.Errorf("the device row: %s", text)
+	}
+}
+
+func TestUTF8Locale(t *testing.T) {
+	for _, c := range []struct {
+		all, ctype, lang string
+		want             bool
+	}{
+		{"", "", "en_US.UTF-8", true},
+		{"", "", "de_DE.utf8", true},
+		{"", "", "C.UTF-8", true},
+		{"", "", "C", false},
+		{"", "", "POSIX", false},
+		{"", "", "", false},
+		{"", "", "de_DE@euro", false},
+		{"", "", "de_DE.ISO-8859-15", false},
+		// the first that is set decides
+		{"C", "en_US.UTF-8", "en_US.UTF-8", false},
+		{"", "C", "en_US.UTF-8", false},
+		{"en_US.UTF-8", "C", "C", true},
+		{"", "en_US.UTF-8", "C", true},
+	} {
+		if got := utf8Locale(c.all, c.ctype, c.lang); got != c.want {
+			t.Errorf("utf8Locale(%q, %q, %q) = %v", c.all, c.ctype, c.lang, got)
+		}
+	}
+}
+
 func TestRenderFitsTheWindow(t *testing.T) {
 	for _, size := range [][2]int{{120, 40}, {80, 25}, {60, 12}, {40, 6}, {200, 80}, {10, 3}} {
 		for _, colour := range []bool{false, true} {

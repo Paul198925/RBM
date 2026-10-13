@@ -32,6 +32,9 @@ type Snapshot struct {
 	Log        []string
 	// Keys says the keyboard is read, so the keys are worth showing.
 	Keys bool
+	// ASCII says the terminal shows nothing but ASCII as it is meant: a
+	// degree sign would come out as something else there.
+	ASCII bool
 }
 
 // The colours of the dashboard, as terminals understand them.
@@ -267,6 +270,10 @@ func Render(s Snapshot, width, height int, colour bool) []string {
 	// ---- devices
 	// hotAt is the temperature from which a card is marked
 	const hotAt = 80
+	degrees := "%.0f °C"
+	if s.ASCII {
+		degrees = "%.0f C"
+	}
 	var devices [][]string
 	var hot []bool
 	for _, d := range s.Devices {
@@ -274,7 +281,7 @@ func Render(s Snapshot, width, height int, colour bool) []string {
 			continue
 		}
 		t := d.Telemetry
-		devices = append(devices, []string{d.ID, d.Model, fmt.Sprintf("%.0f °C", t.TemperatureC), fmt.Sprintf("%.0f %%", t.FanPercent),
+		devices = append(devices, []string{d.ID, d.Model, fmt.Sprintf(degrees, t.TemperatureC), fmt.Sprintf("%.0f %%", t.FanPercent),
 			watts(t.PowerWatts), fmt.Sprintf("%.0f %%", t.UtilizationPercent)})
 		hot = append(hot, t.TemperatureC >= hotAt)
 	}

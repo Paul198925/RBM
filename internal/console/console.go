@@ -102,6 +102,7 @@ func (d *Dashboard) snapshot(keys bool) Snapshot {
 		Benchmarks: d.Source.Benchmarks(),
 		Log:        d.Source.Log(),
 		Keys:       keys,
+		ASCII:      !unicodeTerminal(),
 	}
 	if d.Worker != nil {
 		s.Worker = d.Worker()
