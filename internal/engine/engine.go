@@ -147,6 +147,10 @@ type Engine struct {
 	// failures are the benchmarks that came to nothing, by hash key; nil
 	// until they are read from the store
 	failures map[string]failure
+	// broken are the miner programs that cannot run on this machine, with
+	// what they lack. They are left out with all their algorithms until
+	// the engine is started anew or the watchdog is reset.
+	broken map[string]string
 
 	// what other goroutines may touch
 	mu         sync.Mutex
@@ -439,6 +443,9 @@ func (e *Engine) ResetWatchdog() {
 		for hashKey := range e.failures {
 			e.forgetFailure(hashKey)
 		}
+		// whatever was missing may be installed by now
+		n += len(e.broken)
+		e.broken = nil
 		e.deps.Logf("watchdog was reset, %d entries cleared", n)
 	})
 }
@@ -553,6 +560,15 @@ func (e *Engine) checkRun(g *group, now time.Time) {
 	case <-r.miner.Done():
 		e.deps.Logf("%s: %s exited on its own (%s)", g.name, r.label(), r.miner.ExitText())
 		e.stop(g, stats.EndCrashed, now)
+		// a program that lacks a library fails the same way on every
+		// algorithm: trying them one by one would take the better part
+		// of an hour and tell nothing new
+		if fatal, ok := r.miner.(interface{ Fatal() string }); ok && r.firstHash.IsZero() {
+			if why := fatal.Fatal(); why != "" {
+				e.breakMiner(r.def.Name, why)
+				return
+			}
+		}
 		e.failed(g, r.option, now, false, "exited on its own: "+r.miner.ExitText())
 		return
 	default:
@@ -590,6 +606,19 @@ func (e *Engine) checkRun(g *group, now time.Time) {
 		e.dropMeasurement(g, r.hashKey)
 	}
 	e.failed(g, r.option, now, true, fmt.Sprintf("reported a hashrate, but for %v the devices did nothing and no share was accepted", idle))
+}
+
+// breakMiner takes a miner program out with all its algorithms, for every
+// group of devices.
+func (e *Engine) breakMiner(name, why string) {
+	if e.broken == nil {
+		e.broken = map[string]string{}
+	}
+	if _, known := e.broken[name]; known {
+		return
+	}
+	e.broken[name] = why
+	e.deps.Logf("%s cannot run on this machine: %s It is left out with all its algorithms until hashsteer is started again or the watchdog is reset.", name, why)
 }
 
 // dropMeasurement forgets the hashrate stored for a miner on an algorithm.
@@ -750,7 +779,7 @@ func (e *Engine) options(g *group, now time.Time) ([]option, error) {
 			continue
 		}
 		for _, a := range def.Algorithms {
-			if !e.fits(g, a) || !e.allowed(def, a.Name) {
+			if !e.fits(g, a) || !e.allowed(def, a.Name) || e.broken[def.Name] != "" {
 				continue
 			}
 			offers := e.offersFor(a.Name, now)

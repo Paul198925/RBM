@@ -123,6 +123,18 @@ func (l *launched) Describe() string {
 	return fmt.Sprintf("pid %d, log %s", l.process.PID(), l.logPath)
 }
 
+// Fatal says why the program cannot run on this machine at all, where the
+// way it ended tells: a library or a driver it needs is missing. That holds
+// for every algorithm, not only for the one it was started with. It is
+// empty for a program that ended for another reason.
+func (l *launched) Fatal() string {
+	var exitErr interface{ ExitCode() int }
+	if err := l.process.ExitErr(); err != nil && errors.As(err, &exitErr) {
+		return failureHint(exitErr.ExitCode(), logTail(l.logPath))
+	}
+	return ""
+}
+
 func (l *launched) ExitText() string {
 	err := l.process.ExitErr()
 	if err == nil {

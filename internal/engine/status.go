@@ -20,6 +20,15 @@ type Status struct {
 	Paused   bool          `json:"paused"`
 	Currency string        `json:"currency,omitempty"`
 	Groups   []GroupStatus `json:"groups"`
+	// Broken are the miner programs that cannot run on this machine.
+	Broken []BrokenMiner `json:"broken_miners"`
+}
+
+// BrokenMiner is a miner program that is left out with all its algorithms.
+type BrokenMiner struct {
+	Miner string `json:"miner"`
+	// Reason says what it lacks, and what to install.
+	Reason string `json:"reason"`
 }
 
 // GroupStatus describes one device group.
@@ -109,7 +118,11 @@ func (e *Engine) Status() Status {
 // publish builds a fresh snapshot. Only the engine's own goroutine calls it.
 func (e *Engine) publish(now time.Time) {
 	status := Status{Time: now, BTCPrice: e.rate, BenchmarkSeconds: e.opts.BenchmarkTime.Seconds(), Paused: e.paused,
-		Groups: make([]GroupStatus, 0, len(e.groups))}
+		Groups: make([]GroupStatus, 0, len(e.groups)), Broken: make([]BrokenMiner, 0, len(e.broken))}
+	for name, why := range e.broken {
+		status.Broken = append(status.Broken, BrokenMiner{Miner: name, Reason: why})
+	}
+	sort.Slice(status.Broken, func(i, j int) bool { return status.Broken[i].Miner < status.Broken[j].Miner })
 	if e.rate > 0 {
 		status.Currency = e.opts.PowerCurrency
 	}

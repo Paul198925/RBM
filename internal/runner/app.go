@@ -714,9 +714,16 @@ func (a *App) Status() engine.Status {
 }
 
 func (a *App) System() api.System {
-	system := api.System{Started: a.started, Paused: a.isPaused(), Notices: a.notices}
+	system := api.System{Started: a.started, Paused: a.isPaused(), Notices: slices.Clone(a.notices)}
 	if system.Notices == nil {
 		system.Notices = []string{}
+	}
+	// a miner program that cannot run here is the user's to fix: say so
+	// where it is seen
+	if e := a.currentEngine(); e != nil {
+		for _, b := range e.Status().Broken {
+			system.Notices = append(system.Notices, b.Miner+" cannot run on this machine: "+b.Reason)
+		}
 	}
 	if memory, err := sysinfo.ReadMemory(); err == nil {
 		system.Memory = &memory
