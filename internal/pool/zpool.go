@@ -51,11 +51,20 @@ type Zpool struct {
 
 func (z *Zpool) Name() string { return "zpool" }
 
-// flexFloat reads a JSON number that may also arrive as a string.
+// flexFloat reads a JSON number that may also arrive as a string, or as
+// true or false.
 type flexFloat float64
 
 func (f *flexFloat) UnmarshalJSON(data []byte) error {
-	if string(data) == "null" {
+	switch string(data) {
+	case "null":
+		return nil
+	case "false":
+		// how the pool's PHP says "nothing" where a number belongs
+		*f = 0
+		return nil
+	case "true":
+		*f = 1
 		return nil
 	}
 	if len(data) > 1 && data[0] == '"' {
