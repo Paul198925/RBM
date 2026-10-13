@@ -5,6 +5,7 @@ package wallet
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math/big"
@@ -57,6 +58,11 @@ var explorers = map[string]explorer{
 	"ETC":  {"blockscout", "https://etc.blockscout.com/api/v2", 1e18, "ethereum-classic"},
 	"ERG":  {"ergo", "https://api.ergoplatform.com/api/v1", 1e9, "ergo"},
 	"FIRO": {"insight", "https://explorer.firo.org/insight-api-zcoin", 1e8, "zcoin"},
+	"BTG":  {"blockbook", "https://btgexplorer.com/api/v2", 1e8, "bitcoin-gold"},
+	"OCTA": {"blockscout", "https://scan.octa.space/api/v2", 1e18, "octaspace"},
+	"RTM":  {"raptoreum", "https://explorer.raptoreum.com/api", 1e8, "raptoreum"},
+	// answers with the balance in coins, as a bare number
+	"VTC": {"cryptoid", "https://chainz.cryptoid.info/vtc", 1, "vertcoin"},
 	// a public node of the network
 	"ETHW": {"node", "https://mainnet.ethereumpow.org", 1e18, "ethereum-pow-iou"},
 	// public Electrum servers, as "host:port"; a NEXA has two decimals
@@ -222,6 +228,24 @@ func (r *Reader) Balance(ctx context.Context, currency, address string) (Balance
 		if reply.Balance != nil {
 			confirmed, pending = reply.Balance.value, reply.Unconfirmed.value
 		}
+	case "raptoreum":
+		var reply struct {
+			Balance *amount `json:"balanceSatoshis"`
+		}
+		if err = r.get(ctx, e.base+"/getaddressbalance/"+escaped+"&json=true", &reply); err == nil && reply.Balance == nil {
+			err = fmt.Errorf("the answer holds no balance")
+		}
+		if reply.Balance != nil {
+			confirmed = reply.Balance.value
+		}
+	case "cryptoid":
+		var coins *amount
+		if err = r.get(ctx, e.base+"/api.dws?q=getbalance&a="+url.QueryEscape(address), &coins); err == nil && coins == nil {
+			err = fmt.Errorf("the answer holds no balance")
+		}
+		if coins != nil {
+			confirmed = coins.value
+		}
 	case "node":
 		confirmed, err = r.nodeBalance(ctx, e.base, address)
 	case "electrum-address":
@@ -278,5 +302,12 @@ func (r *Reader) send(ctx context.Context, method, address string, payload io.Re
 		}
 		return fmt.Errorf("status %s %s", resp.Status, text)
 	}
-	return json.Unmarshal(body, into)
+	if err := json.Unmarshal(body, into); err != nil {
+		// a page instead of an answer: the explorer is being worked on
+		if strings.HasPrefix(strings.TrimSpace(string(body)), "<") {
+			return errors.New("the explorer answered with a page instead of a balance")
+		}
+		return err
+	}
+	return nil
 }

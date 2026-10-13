@@ -22,6 +22,9 @@ var replies = map[string]string{
 	"/addresses/9test/balance/total":        `{"confirmed":{"nanoErgs":2500000000,"tokens":[]},"unconfirmed":{"nanoErgs":100000000,"tokens":[]}}`,
 	"/addr/atest?noTxList=1":                `{"addrStr":"atest","balance":40,"balanceSat":4000000000,"totalReceived":40,"totalReceivedSat":4000000000,"unconfirmedBalance":null,"txApperances":2}`,
 	"/address/unknown-to-blockbook?details": `{"error":"Invalid address, checksum mismatch"}`,
+	"/getaddressbalance/Rtm1&json=true":     `{"success":"true","address":"Rtm1","balanceRTM":151514.0684747,"balanceSatoshis":15151406847470}`,
+	"/getaddressbalance/Rdown&json=true":    `<!DOCTYPE html> <html lang="en"> <head><title>Maintenance - Raptoreum Explorer</title>`,
+	"/api.dws?q=getbalance&a=Vtc1":          `1234.56789`,
 }
 
 func explorerStub(t *testing.T) string {
@@ -55,6 +58,9 @@ func TestBalanceInEveryDialect(t *testing.T) {
 		{"ETC", "0xtest", 1.411352811853608741, 0, "etc.blockscout.com"},
 		{"ERG", "9test", 2.5, 0.1, "api.ergoplatform.com"},
 		{"FIRO", "atest", 40, 0, "explorer.firo.org"},
+		{"RTM", "Rtm1", 151514.0684747, 0, "explorer.raptoreum.com"},
+		{"VTC", "Vtc1", 1234.56789, 0, "chainz.cryptoid.info"},
+		{"BTG", "Rtest", 12305770.94080288, -1.5, "btgexplorer.com"},
 	} {
 		b, err := r.Balance(context.Background(), c.coin, c.address)
 		if err != nil {
@@ -89,6 +95,10 @@ func TestBalanceThatCannotBeRead(t *testing.T) {
 	if _, err := r.Balance(ctx, "XNA", "Xempty"); err == nil {
 		t.Error("an answer without a balance was taken for zero")
 	}
+	// an explorer that shows a page instead of answering
+	if _, err := r.Balance(ctx, "RTM", "Rdown"); err == nil || !strings.Contains(err.Error(), "a page instead of a balance") {
+		t.Errorf("an explorer in maintenance: %v", err)
+	}
 	// an explorer that does not answer: the address stays out of the error
 	dead := &Reader{Base: "http://127.0.0.1:1"}
 	_, err = dead.Balance(ctx, "BTC", "bc1qsecretaddress")
@@ -99,7 +109,7 @@ func TestBalanceThatCannotBeRead(t *testing.T) {
 
 func TestSupported(t *testing.T) {
 	coins := Supported()
-	if strings.Join(coins, " ") != "BTC DOGE ERG ETC ETHW FIRO LTC MEWC NEXA RVN RXD XNA" {
+	if strings.Join(coins, " ") != "BTC BTG DOGE ERG ETC ETHW FIRO LTC MEWC NEXA OCTA RTM RVN RXD VTC XNA" {
 		t.Errorf("supported: %v", coins)
 	}
 	if !Known("rvn") || !Known("NEXA") || Known("XMR") {
@@ -129,6 +139,10 @@ func TestLive(t *testing.T) {
 		"ERG":  "9hY16vzHmmfyVBwKeFGHvb2bMFsG94A1u7To1QWtUokACyFVENQ",
 		"FIRO": "aEF2p3jepoWF2yRYZjb6EACCP4CaP41doV",
 		"ETHW": "0x000000000000000000000000000000000000dEaD",
+		"BTG":  "GJjz2Du9BoJQ3CPcoyVTHUJZSj62i1693U",
+		"OCTA": "0x000000000000000000000000000000000000dEaD",
+		"RTM":  "REc5yRhxWgmPKx7g5EpwenEoop17iLW3XS",
+		"VTC":  "VmYCBMRZc8uNjcUzV8uCCgKStYqPyY5AV3",
 		"RXD":  "1BitcoinEaterAddressDontSendf59kuE",
 	} {
 		addresses[coin] = address
