@@ -100,6 +100,8 @@ hashsteer [-config dir] <command>
 
 `start.bat` and `start.sh` run `hashsteer run`. In a checkout of this repository they build the program first if it is not there yet. If Go is missing for that, `start.bat` asks whether to install it with winget, and `start.sh` says how to install it.
 
+Every start of a miner program writes a log to `data/logs`; the web interface shows them. A log that grows past 32 MB is cut down to its end, logs older than two weeks are removed, and so are the oldest ones while all of them together take more than 1 GB.
+
 In a terminal, `hashsteer run` draws a dashboard that is redrawn in place, the way RainbowMiner does: what each group of devices mines and earns, the open benchmarks, temperatures, pool balances and the end of the log. **P** pauses and resumes, **Q** or Ctrl+C quits. `hashsteer run -plain` writes the log line by line instead; that is also what happens when the output is not a terminal, as under systemd.
 
 ### Configuration

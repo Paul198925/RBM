@@ -99,6 +99,9 @@ func Start(spec Spec) (*Process, error) {
 		return nil, fmt.Errorf("guard %s: %w", spec.Path, err)
 	}
 
+	if spec.LogPath != "" {
+		go watchLog(spec.LogPath, p.done)
+	}
 	go func() {
 		err := cmd.Wait()
 		// whatever the program forked must not outlive it

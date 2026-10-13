@@ -158,6 +158,7 @@ func (a *App) Run(ctx context.Context) error {
 	go a.watch(watchCtx)
 	go a.watchUpdates(watchCtx)
 	go a.watchSharing(watchCtx)
+	go a.watchLogs(watchCtx)
 
 	// a restart for an update ends everything the way Ctrl+C does
 	ctx, stop := context.WithCancel(ctx)

@@ -26,6 +26,14 @@ func TestMain(m *testing.M) {
 		fmt.Println("hello from helper")
 		fmt.Fprintln(os.Stderr, "and from stderr")
 		os.Exit(3)
+	case "chatter":
+		// a miner in trouble: the same line, as fast as it goes
+		for i := 0; ; i++ {
+			fmt.Printf("line %d: launch: invalid resource handle\n", i)
+			if i%200 == 0 {
+				time.Sleep(time.Millisecond)
+			}
+		}
 	case "sleep":
 		fmt.Println("ready")
 		time.Sleep(time.Hour)
