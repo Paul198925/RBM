@@ -8,7 +8,7 @@ set HASHSTEER_RESTART=1
 
 :run
 rem a newer build waits next to the running program until the next start
-if exist hashsteer.new.exe move /y hashsteer.new.exe hashsteer.exe >nul
+if exist hashsteer.new.exe call :swap
 
 if not exist hashsteer.exe call :build
 if not exist hashsteer.exe (
@@ -24,6 +24,23 @@ echo.
 echo hashsteer has stopped.
 pause
 exit /b 0
+
+rem Puts the newer build in the place of the program. Right after the program
+rem has ended, or while a virus scanner looks at the new file, Windows can
+rem refuse that for a moment: it is tried for some seconds before giving up.
+:swap
+set tries=0
+:swapagain
+move /y hashsteer.new.exe hashsteer.exe >nul 2>&1
+if not exist hashsteer.new.exe exit /b 0
+set /a tries+=1
+if %tries% geq 15 (
+    echo The new version could not be put in place: hashsteer.exe is in use.
+    echo Starting the old one. The new one is tried again at the next start.
+    exit /b 1
+)
+ping -n 2 127.0.0.1 >nul
+goto swapagain
 
 rem Builds hashsteer.exe from the source code next to this file, if that is there.
 rem Go is needed for it; if it is missing, the user is asked before it is
